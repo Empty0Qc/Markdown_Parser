@@ -1,0 +1,12 @@
+.DS_Store
+
+.claude/
+
+build/
+demo/android/build/
+
+*.o
+
+smoke_test
+test_m6
+test_m7

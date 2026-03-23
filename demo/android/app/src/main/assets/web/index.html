@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mk-parser — Live Demo</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #21262d;
+    --border:    #30363d;
+    --accent:    #58a6ff;
+    --accent2:   #3fb950;
+    --warn:      #d29922;
+    --text:      #c9d1d9;
+    --muted:     #8b949e;
+    --tag-doc:   #388bfd22;
+    --tag-block: #3fb95022;
+    --tag-inline:#f7851422;
+    --tag-text:  #8b949e22;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, monospace;
+    --radius:    8px;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+         font-size: 14px; line-height: 1.6; height: 100dvh; display: flex; flex-direction: column; }
+
+  header { padding: 12px 20px; border-bottom: 1px solid var(--border);
+           display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  header h1 { font-size: 16px; font-weight: 600; color: #e6edf3; }
+  header span { color: var(--muted); font-size: 12px; }
+  .badge { background: var(--accent); color: #000; font-size: 10px; font-weight: 700;
+           padding: 2px 6px; border-radius: 20px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+  .panel  { display: flex; flex-direction: column; min-height: 0; }
+  .panel + .panel { border-left: 1px solid var(--border); }
+
+  .panel-header { padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border);
+                  display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .panel-header label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+                        letter-spacing: .05em; flex: 1; }
+
+  .controls { display: flex; gap: 6px; align-items: center; }
+  button { background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+           border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+           transition: background .15s; }
+  button:hover { background: var(--border); }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { opacity: .9; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  select { background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+           border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+
+  #editor { flex: 1; background: var(--bg); color: var(--text); border: none; outline: none;
+            padding: 14px; font-family: var(--font-mono); font-size: 13px; resize: none;
+            line-height: 1.7; tab-size: 4; }
+
+  .right-panel { display: flex; flex-direction: column; min-height: 0; }
+
+  /* Tab bar */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
+          background: var(--surface); }
+  .tab  { padding: 8px 16px; font-size: 12px; font-weight: 500; color: var(--muted);
+          cursor: pointer; border-bottom: 2px solid transparent; transition: color .15s; }
+  .tab:hover  { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content      { display: none; flex: 1; overflow: auto; min-height: 0; }
+  .tab-content.show { display: flex; flex-direction: column; }
+
+  /* Event stream */
+  #event-stream { flex: 1; padding: 10px; font-family: var(--font-mono); font-size: 12px;
+                  overflow-y: auto; }
+  .ev { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; border-bottom: 1px solid #ffffff08; }
+  .ev-idx  { color: var(--muted); min-width: 32px; text-align: right; font-size: 11px; }
+  .ev-kind { min-width: 60px; font-weight: 600; font-size: 11px; }
+  .ev-kind.open   { color: var(--accent2); }
+  .ev-kind.close  { color: #f7851a; }
+  .ev-kind.text   { color: var(--accent); }
+  .ev-kind.modify { color: var(--warn); }
+  .ev-type { color: var(--text); }
+  .ev-attr { color: var(--muted); font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+
+  /* AST tree */
+  #ast-tree { flex: 1; padding: 10px; font-family: var(--font-mono); font-size: 12px;
+              overflow-y: auto; }
+  .tree-node { padding-left: 20px; }
+  .tree-node-label { display: flex; gap: 6px; align-items: baseline;
+                     padding: 1px 4px; border-radius: 4px; cursor: default; }
+  .tree-node-label:hover { background: var(--surface2); }
+  .tn-type  { font-weight: 600; }
+  .tn-text  { color: var(--muted); font-size: 11px; max-width: 260px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tn-attr  { color: #58a6ff88; font-size: 11px; }
+  /* node kind colors */
+  .k-document   { color: #e6edf3; }
+  .k-heading    { color: #d2a8ff; }
+  .k-paragraph  { color: var(--accent2); }
+  .k-code_block { color: var(--warn); }
+  .k-list,.k-list_item { color: #79c0ff; }
+  .k-table,.k-table_head,.k-table_row,.k-table_cell { color: #56d364; }
+  .k-link,.k-image,.k-auto_link { color: #ffa657; }
+  .k-emphasis,.k-strong,.k-strikethrough { color: #ff7b72; }
+  .k-inline_code { color: var(--warn); }
+  .k-text { color: var(--muted); }
+  .k-soft_break,.k-hard_break { color: #30363d; }
+
+  /* Preview pane */
+  #preview { flex: 1; padding: 16px 20px; overflow-y: auto; line-height: 1.7;
+             font-family: system-ui, sans-serif; }
+  #preview h1,#preview h2,#preview h3,#preview h4,#preview h5,#preview h6
+             { margin: .8em 0 .4em; color: #e6edf3; }
+  #preview h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+  #preview h2 { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
+  #preview p  { margin: .6em 0; }
+  #preview a  { color: var(--accent); }
+  #preview code { background: var(--surface2); padding: .1em .4em; border-radius: 4px;
+                  font-family: var(--font-mono); font-size: .88em; }
+  #preview pre  { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+                  padding: 14px; overflow-x: auto; margin: .8em 0; }
+  #preview pre code { background: none; padding: 0; }
+  #preview blockquote { border-left: 3px solid var(--border); padding-left: 12px; color: var(--muted);
+                         margin: .6em 0; }
+  #preview ul,#preview ol { padding-left: 20px; margin: .4em 0; }
+  #preview li { margin: .2em 0; }
+  #preview table { border-collapse: collapse; width: 100%; margin: .6em 0; }
+  #preview th,#preview td { border: 1px solid var(--border); padding: 6px 12px; }
+  #preview th { background: var(--surface2); }
+  #preview hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+  #preview input[type=checkbox] { margin-right: 6px; }
+  #preview del { color: var(--muted); }
+
+  /* Stream animation */
+  .stream-cursor { display: inline-block; width: 2px; height: 1em; background: var(--accent);
+                   vertical-align: text-bottom; animation: blink .9s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .stats-bar { padding: 4px 14px; background: var(--surface); border-top: 1px solid var(--border);
+               font-size: 11px; color: var(--muted); display: flex; gap: 16px; flex-shrink: 0; }
+  .stat span { color: var(--accent); font-weight: 600; }
+
+  /* Speed slider */
+  input[type=range] { accent-color: var(--accent); width: 80px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>mk-parser</h1>
+  <span class="badge">WASM</span>
+  <span>Incremental Markdown parser · AI streaming demo</span>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+    <select id="sample-select">
+      <option value="gfm">GFM Showcase</option>
+      <option value="streaming">AI Streaming Sim</option>
+      <option value="tables">Tables &amp; Alignment</option>
+      <option value="nesting">Nested Structures</option>
+      <option value="links">Links &amp; Images</option>
+    </select>
+    <button class="primary" id="stream-btn">▶ Stream</button>
+    <button id="parse-btn">Parse All</button>
+    <button id="clear-btn">Clear</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Left: editor -->
+  <div class="panel">
+    <div class="panel-header">
+      <label>Input</label>
+      <div class="controls">
+        <span style="font-size:11px;color:var(--muted)">Speed:</span>
+        <input type="range" id="speed" min="1" max="100" value="40">
+        <span id="speed-label" style="font-size:11px;color:var(--muted);min-width:32px">40ms</span>
+      </div>
+    </div>
+    <textarea id="editor" spellcheck="false"></textarea>
+  </div>
+
+  <!-- Right: tabs -->
+  <div class="panel right-panel">
+    <div class="tabs">
+      <div class="tab active" data-tab="events">Events</div>
+      <div class="tab" data-tab="ast">AST</div>
+      <div class="tab" data-tab="preview">Preview</div>
+    </div>
+
+    <div class="tab-content show" id="tab-events">
+      <div class="panel-header">
+        <label>Event stream</label>
+        <div class="controls">
+          <button id="clear-events-btn" style="font-size:11px">Clear</button>
+        </div>
+      </div>
+      <div id="event-stream"></div>
+    </div>
+
+    <div class="tab-content" id="tab-ast">
+      <div class="panel-header"><label>AST</label></div>
+      <div id="ast-tree"></div>
+    </div>
+
+    <div class="tab-content" id="tab-preview">
+      <div class="panel-header"><label>Preview</label></div>
+      <div id="preview"></div>
+    </div>
+
+    <div class="stats-bar">
+      <div>Events: <span id="stat-events">0</span></div>
+      <div>Nodes: <span id="stat-nodes">0</span></div>
+      <div>Chars fed: <span id="stat-chars">0</span></div>
+      <div>Time: <span id="stat-time">0ms</span></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── Sample data ───────────────────────────────────────────────────────────────
+const SAMPLES = {
+  gfm: `# GFM Showcase
+
+## Headings, Emphasis & Strikethrough
+
+Regular paragraph with **bold**, *italic*, ~~strikethrough~~, and \`inline code\`.
+
+A hard break is two trailing spaces
+on the next line.
+
+## Fenced Code Block
+
+\`\`\`javascript
+const parser = new WasmMkParser(Module, {
+  onNodeOpen(type, node) { console.log('open', type, node); },
+  onText(text)           { process.stdout.write(text); },
+});
+\`\`\`
+
+## Blockquote
+
+> Blockquotes are useful for callouts.
+> They can span multiple lines.
+
+## Lists
+
+- Unordered item one
+- Unordered item two
+  - Nested item
+  - Another nested
+
+1. First ordered
+2. Second ordered
+
+- [x] Task done
+- [ ] Task pending
+
+## Table
+
+| Name     | Type     | Notes             |
+|----------|----------|-------------------|
+| HEADING  | Block    | ATX & Setext      |
+| LINK     | Inline   | \`[text](href)\`  |
+| TABLE    | Block    | GFM extension     |
+
+## Autolink & HTML
+
+Visit <https://github.com> for more.
+
+<div class="note">Raw HTML inline block.</div>
+
+---
+
+Thematic break above.
+`,
+
+  streaming: `# AI Streaming Simulation
+
+This demo feeds text character-by-character to simulate an LLM token stream.
+
+Press **▶ Stream** and watch the events fire in real-time.
+
+\`\`\`python
+import anthropic
+
+client = anthropic.Anthropic()
+with client.messages.stream(
+    model="claude-opus-4-6",
+    max_tokens=1024,
+    messages=[{"role": "user", "content": "Hello"}]
+) as stream:
+    for text in stream.text_stream:
+        parser.feed(text)
+
+parser.finish()
+\`\`\`
+
+The parser emits events **incrementally** — headings, paragraphs, and code blocks
+are opened and closed as soon as enough tokens arrive.
+`,
+
+  tables: `# Tables & Column Alignment
+
+| Left aligned | Center aligned | Right aligned |
+|:-------------|:--------------:|--------------:|
+| cell 1       | cell 2         | cell 3        |
+| longer cell  | mid            | 42            |
+
+## Nested table in blockquote
+
+> | A | B |
+> |---|---|
+> | 1 | 2 |
+
+## Promotion demo
+
+A table starts as a paragraph and is **promoted** via a MODIFY event
+once the separator row is detected.
+`,
+
+  nesting: `# Nested Structures
+
+## Deeply nested lists
+
+- Level 1
+  - Level 2
+    - Level 3
+      - Level 4
+  - Back to 2
+
+## Nested blockquotes
+
+> Outer quote
+> > Inner quote
+> > > Triple nested
+
+## List in blockquote
+
+> - Item A
+> - Item B
+>   - Sub B1
+`,
+
+  links: `# Links & Images
+
+## Inline links
+
+[OpenAI](https://openai.com)
+[Anthropic](https://anthropic.com "AI Safety Company")
+
+## Auto-links
+
+<https://example.com>
+<user@example.com>
+
+## Reference-style links
+
+*Note: mk-parser focuses on inline/fenced CommonMark; reference links TBD.*
+
+## Images
+
+![Alt text](https://via.placeholder.com/150 "Placeholder")
+
+## Emphasis combos
+
+***bold and italic*** text here.
+__strong with underscores__
+_single italic_
+`,
+};
+
+// ── NodeType constants (mirrors C enum) ───────────────────────────────────────
+const NodeType = {
+  DOCUMENT:0,HEADING:1,PARAGRAPH:2,CODE_BLOCK:3,BLOCK_QUOTE:4,
+  LIST:5,LIST_ITEM:6,THEMATIC_BREAK:7,HTML_BLOCK:8,
+  TABLE:9,TABLE_HEAD:10,TABLE_ROW:11,TABLE_CELL:12,
+  TEXT:13,SOFT_BREAK:14,HARD_BREAK:15,EMPHASIS:16,STRONG:17,
+  STRIKETHROUGH:18,INLINE_CODE:19,LINK:20,IMAGE:21,
+  AUTO_LINK:22,HTML_INLINE:23,TASK_LIST_ITEM:24,
+};
+const TYPE_NAME = Object.fromEntries(Object.entries(NodeType).map(([k,v])=>[v,k]));
+const TYPE_CLASS = (t) => (TYPE_NAME[t] || 'unknown').toLowerCase();
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+const $  = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+const editor       = $('#editor');
+const streamBtn    = $('#stream-btn');
+const parseBtn     = $('#parse-btn');
+const clearBtn     = $('#clear-btn');
+const clearEvtBtn  = $('#clear-events-btn');
+const speedSlider  = $('#speed');
+const speedLabel   = $('#speed-label');
+const sampleSelect = $('#sample-select');
+const evStream     = $('#event-stream');
+const astTree      = $('#ast-tree');
+const preview      = $('#preview');
+
+let statEvents=0, statNodes=0, statChars=0, statTime=0;
+function updateStats() {
+  $('#stat-events').textContent = statEvents;
+  $('#stat-nodes').textContent  = statNodes;
+  $('#stat-chars').textContent  = statChars;
+  $('#stat-time').textContent   = statTime + 'ms';
+}
+
+function resetStats() {
+  statEvents=statNodes=statChars=statTime=0;
+  updateStats();
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  $$('.tab-content').forEach(c => c.classList.toggle('show', c.id === `tab-${name}`));
+}
+
+$$('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+// ── Speed control ─────────────────────────────────────────────────────────────
+speedSlider.addEventListener('input', () => {
+  speedLabel.textContent = speedSlider.value + 'ms';
+});
+
+// ── Sample selector ───────────────────────────────────────────────────────────
+sampleSelect.addEventListener('change', () => {
+  editor.value = SAMPLES[sampleSelect.value] || '';
+  evStream.innerHTML = '';
+  astTree.innerHTML  = '';
+  preview.innerHTML  = '';
+  resetStats();
+});
+editor.value = SAMPLES['gfm'];
+
+// ── Event rendering ───────────────────────────────────────────────────────────
+let evIdx = 0;
+
+function addEvent(kind, typeNum, attrs = '') {
+  statEvents++;
+  evIdx++;
+  const typeName = TYPE_NAME[typeNum] ?? String(typeNum);
+  const el = document.createElement('div');
+  el.className = 'ev';
+  el.innerHTML =
+    `<span class="ev-idx">${evIdx}</span>` +
+    `<span class="ev-kind ${kind}">${kind.toUpperCase()}</span>` +
+    `<span class="ev-type">${typeName}</span>` +
+    (attrs ? `<span class="ev-attr"> ${attrs}</span>` : '');
+  evStream.appendChild(el);
+  evStream.scrollTop = evStream.scrollHeight;
+}
+
+function clearEvents() {
+  evStream.innerHTML = '';
+  evIdx = 0;
+}
+
+clearEvtBtn.addEventListener('click', clearEvents);
+
+// ── AST builder ───────────────────────────────────────────────────────────────
+function buildAST(markdown) {
+  const root = { type: NodeType.DOCUMENT, children: [], text: '' };
+  const stack = [root];
+
+  const demoParser = new DemoParser({
+    onNodeOpen(type, node) {
+      const n = { type, ...node, children: [], text: '' };
+      stack[stack.length - 1].children.push(n);
+      stack.push(n);
+    },
+    onNodeClose() { if (stack.length > 1) stack.pop(); },
+    onText(text)  { const top = stack[stack.length - 1]; top.text += text; },
+    onModify(type, node) {
+      const top = stack[stack.length - 1];
+      Object.assign(top, { type, ...node });
+    },
+  });
+  demoParser.feed(markdown);
+  demoParser.finish();
+
+  return root;
+}
+
+function renderAST(node, depth = 0) {
+  const name = TYPE_NAME[node.type] ?? String(node.type);
+  const cls  = TYPE_CLASS(node.type);
+  const el   = document.createElement('div');
+  el.className = 'tree-node';
+
+  // Build label
+  let attrs = '';
+  if (node.level)    attrs += ` h${node.level}`;
+  if (node.lang)     attrs += ` lang="${node.lang}"`;
+  if (node.href)     attrs += ` href="${node.href}"`;
+  if (node.src)      attrs += ` src="${node.src}"`;
+  if (node.ordered !== undefined) attrs += node.ordered ? ' ordered' : ' unordered';
+  if (node.colCount) attrs += ` cols=${node.colCount}`;
+
+  const textPreview = node.text ? ` "${node.text.slice(0,40).replace(/\n/g,'↵')}"` : '';
+
+  el.innerHTML =
+    `<div class="tree-node-label">` +
+    `<span class="tn-type k-${cls}">${name}</span>` +
+    (attrs ? `<span class="tn-attr">${attrs}</span>` : '') +
+    (textPreview ? `<span class="tn-text">${textPreview}</span>` : '') +
+    `</div>`;
+
+  if (node.children?.length) {
+    const childWrap = document.createElement('div');
+    node.children.forEach(c => childWrap.appendChild(renderAST(c, depth + 1)));
+    el.appendChild(childWrap);
+  }
+  return el;
+}
+
+// ── HTML preview renderer (basic, no dependency) ──────────────────────────────
+function renderHTMLPreview(markdown) {
+  // Render via a DemoParser that builds minimal HTML
+  const htmlChunks = [];
+  const stack = [];
+
+  const openTag = (tag, attrs='') =>
+    htmlChunks.push(`<${tag}${attrs ? ' ' + attrs : ''}>`);
+  const closeTag = (tag) =>
+    htmlChunks.push(`</${tag}>`);
+  const escHTML = (s) =>
+    s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const BLOCK_TAG = {
+    [NodeType.DOCUMENT]:    ['div', ''],
+    [NodeType.HEADING]:     (n) => [`h${n.level||1}`, ''],
+    [NodeType.PARAGRAPH]:   ['p',  ''],
+    [NodeType.CODE_BLOCK]:  ['pre',''],
+    [NodeType.BLOCK_QUOTE]: ['blockquote', ''],
+    [NodeType.LIST]:        (n) => [n.ordered ? 'ol' : 'ul', n.ordered && n.start!==1 ? `start="${n.start}"` : ''],
+    [NodeType.LIST_ITEM]:   ['li', ''],
+    [NodeType.TASK_LIST_ITEM]: ['li', ''],
+    [NodeType.THEMATIC_BREAK]: null,
+    [NodeType.HTML_BLOCK]:  null,
+    [NodeType.TABLE]:       ['table', ''],
+    [NodeType.TABLE_HEAD]:  ['thead', ''],
+    [NodeType.TABLE_ROW]:   ['tr', ''],
+    [NodeType.TABLE_CELL]:  (n) => ['td', n.align && n.align!=='none' ? `style="text-align:${n.align}"` : ''],
+    [NodeType.EMPHASIS]:    ['em',  ''],
+    [NodeType.STRONG]:      ['strong', ''],
+    [NodeType.STRIKETHROUGH]:['del',''],
+    [NodeType.INLINE_CODE]: ['code', ''],
+    [NodeType.LINK]:        (n) => ['a', `href="${escHTML(n.href||'')}"`],
+    [NodeType.IMAGE]:       null,
+    [NodeType.AUTO_LINK]:   (n) => ['a', `href="${escHTML(n.url||'')}"`],
+    [NodeType.HTML_INLINE]: null,
+    [NodeType.TEXT]:        null,
+    [NodeType.SOFT_BREAK]:  null,
+    [NodeType.HARD_BREAK]:  null,
+  };
+
+  const dp = new DemoParser({
+    onNodeOpen(type, node) {
+      if (type === NodeType.THEMATIC_BREAK) { htmlChunks.push('<hr>'); stack.push(null); return; }
+      if (type === NodeType.IMAGE) {
+        htmlChunks.push(`<img src="${escHTML(node.src||'')}" alt="${escHTML(node.alt||'')}">`);
+        stack.push(null); return;
+      }
+      if (type === NodeType.HTML_BLOCK || type === NodeType.HTML_INLINE) {
+        stack.push(null); return;
+      }
+      if (type === NodeType.SOFT_BREAK) { htmlChunks.push(' '); stack.push(null); return; }
+      if (type === NodeType.HARD_BREAK) { htmlChunks.push('<br>'); stack.push(null); return; }
+      if (type === NodeType.TEXT) { stack.push(null); return; }
+      if (type === NodeType.TASK_LIST_ITEM) {
+        htmlChunks.push(`<li><input type="checkbox"${node.checked?' checked':''} disabled> `);
+        stack.push('li'); return;
+      }
+      if (type === NodeType.CODE_BLOCK) {
+        htmlChunks.push(`<pre><code${node.lang?` class="language-${escHTML(node.lang)}"`:''}}>`);
+        stack.push('code_block'); return;
+      }
+
+      const spec = BLOCK_TAG[type];
+      if (!spec) { stack.push(null); return; }
+      const [tag, attrs] = typeof spec === 'function' ? spec(node) : spec;
+      openTag(tag, attrs);
+      stack.push(tag);
+    },
+    onNodeClose(type) {
+      const tag = stack.pop();
+      if (!tag) return;
+      if (tag === 'code_block') { htmlChunks.push('</code></pre>'); return; }
+      if (tag === 'div') return; // document wrapper
+      closeTag(tag);
+    },
+    onText(text) {
+      const top = stack[stack.length - 1];
+      if (top === 'code_block') { htmlChunks.push(escHTML(text)); return; }
+      // Don't output raw text if this is inside an HTML block
+      htmlChunks.push(escHTML(text));
+    },
+    onModify(type, node) {
+      // table/heading promotion: just update the top stack tag
+    },
+  });
+  dp.feed(markdown);
+  dp.finish();
+
+  // strip outer <div></div>
+  let html = htmlChunks.join('');
+  html = html.replace(/^<div>/, '').replace(/<\/div>$/, '');
+  return html;
+}
+
+// ── DemoParser — pure-JS fallback (no WASM required for demo) ─────────────────
+//
+// Line-buffered: events fire as soon as a complete "paragraph boundary" is
+// seen, so streaming mode can update the preview incrementally.
+//
+// Replace `new DemoParser(...)` with `new WasmMkParser(Module, ...)` once
+// the WASM build is available.
+
+class DemoParser {
+  #cb;
+  #lineBuf  = '';   // partial last line waiting for '\n'
+  #pending  = [];   // complete lines not yet parsed
+
+  constructor(callbacks = {}) { this.#cb = callbacks; }
+
+  feed(chunk) {
+    // Append chunk, split on newlines, keep partial last line in buffer
+    const raw = this.#lineBuf + chunk;
+    const nl  = raw.lastIndexOf('\n');
+    if (nl >= 0) {
+      const complete = raw.slice(0, nl + 1);
+      this.#lineBuf  = raw.slice(nl + 1);
+      this.#pending.push(...complete.split('\n').map(l => l + '\n')
+                         .flatMap(l => l === '\n' ? [''] : [l.slice(0, -1)]));
+    } else {
+      this.#lineBuf = raw;
+    }
+    return this;
+  }
+
+  finish() {
+    // Flush remaining buffer as a final line
+    if (this.#lineBuf) {
+      this.#pending.push(this.#lineBuf);
+      this.#lineBuf = '';
+    }
+    this.#cb.onNodeOpen?.(NodeType.DOCUMENT, { type: NodeType.DOCUMENT, flags: 0 });
+    this.#parseBlocks(this.#pending, 0, this.#pending.length);
+    this.#cb.onNodeClose?.(NodeType.DOCUMENT, { type: NodeType.DOCUMENT, flags: 0 });
+    this.#pending = [];
+    return this;
+  }
+
+  destroy() {}
+
+  #parseBlocks(lines, start, end) {
+    let i = start;
+    while (i < end) {
+      // Skip blank lines
+      if (lines[i].trim() === '') { i++; continue; }
+
+      // ATX Heading
+      const hm = lines[i].match(/^(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/);
+      if (hm) {
+        const level = hm[1].length;
+        const node = { type: NodeType.HEADING, flags: 0, level };
+        this.#cb.onNodeOpen?.(NodeType.HEADING, node);
+        this.#parseInline(hm[2]);
+        this.#cb.onNodeClose?.(NodeType.HEADING, node);
+        i++; continue;
+      }
+
+      // Thematic break
+      if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(lines[i])) {
+        this.#cb.onNodeOpen?.(NodeType.THEMATIC_BREAK, { type: NodeType.THEMATIC_BREAK, flags: 0 });
+        this.#cb.onNodeClose?.(NodeType.THEMATIC_BREAK, { type: NodeType.THEMATIC_BREAK, flags: 0 });
+        i++; continue;
+      }
+
+      // Fenced code block
+      const fm = lines[i].match(/^(`{3,}|~{3,})\s*(\S*)/);
+      if (fm) {
+        const fence = fm[1], lang = fm[2] || null;
+        const node = { type: NodeType.CODE_BLOCK, flags: 0, lang, fenced: true };
+        this.#cb.onNodeOpen?.(NodeType.CODE_BLOCK, node);
+        i++;
+        while (i < end && !lines[i].startsWith(fence)) {
+          this.#cb.onText?.(lines[i] + '\n');
+          statChars += lines[i].length + 1;
+          i++;
+        }
+        this.#cb.onNodeClose?.(NodeType.CODE_BLOCK, node);
+        i++; continue;
+      }
+
+      // Blockquote
+      if (lines[i].startsWith('>')) {
+        const bqLines = [];
+        while (i < end && (lines[i].startsWith('>') || lines[i].trim())) {
+          bqLines.push(lines[i].replace(/^>\s?/, ''));
+          i++;
+        }
+        const node = { type: NodeType.BLOCK_QUOTE, flags: 0 };
+        this.#cb.onNodeOpen?.(NodeType.BLOCK_QUOTE, node);
+        this.#parseBlocks(bqLines, 0, bqLines.length);
+        this.#cb.onNodeClose?.(NodeType.BLOCK_QUOTE, node);
+        continue;
+      }
+
+      // Unordered list
+      if (/^[-*+]\s/.test(lines[i])) {
+        const node = { type: NodeType.LIST, flags: 0, ordered: false, start: 1 };
+        this.#cb.onNodeOpen?.(NodeType.LIST, node);
+        while (i < end && /^[-*+]\s/.test(lines[i])) {
+          const content = lines[i].slice(2);
+          const isTask = content.match(/^\[(x| )\]\s(.*)/);
+          if (isTask) {
+            const checked = isTask[1] === 'x';
+            const tnode = { type: NodeType.TASK_LIST_ITEM, flags: 0, checked };
+            this.#cb.onNodeOpen?.(NodeType.TASK_LIST_ITEM, tnode);
+            this.#parseInline(isTask[2]);
+            this.#cb.onNodeClose?.(NodeType.TASK_LIST_ITEM, tnode);
+          } else {
+            const linode = { type: NodeType.LIST_ITEM, flags: 0 };
+            this.#cb.onNodeOpen?.(NodeType.LIST_ITEM, linode);
+            this.#parseInline(content);
+            this.#cb.onNodeClose?.(NodeType.LIST_ITEM, linode);
+          }
+          i++;
+        }
+        this.#cb.onNodeClose?.(NodeType.LIST, node);
+        continue;
+      }
+
+      // Ordered list
+      if (/^\d+[.)]\s/.test(lines[i])) {
+        const startNum = parseInt(lines[i]);
+        const node = { type: NodeType.LIST, flags: 0, ordered: true, start: startNum };
+        this.#cb.onNodeOpen?.(NodeType.LIST, node);
+        while (i < end && /^\d+[.)]\s/.test(lines[i])) {
+          const content = lines[i].replace(/^\d+[.)]\s/, '');
+          const linode = { type: NodeType.LIST_ITEM, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.LIST_ITEM, linode);
+          this.#parseInline(content);
+          this.#cb.onNodeClose?.(NodeType.LIST_ITEM, linode);
+          i++;
+        }
+        this.#cb.onNodeClose?.(NodeType.LIST, node);
+        continue;
+      }
+
+      // Table (simplified: detect separator row)
+      const tableRows = [];
+      let j = i;
+      while (j < end && lines[j].includes('|')) tableRows.push(lines[j++]);
+      if (tableRows.length >= 2 && /^\|?[\s\-:]+\|/.test(tableRows[1])) {
+        const colAligns = tableRows[1].split('|').slice(1,-1).map(c => {
+          c = c.trim();
+          if (c.startsWith(':') && c.endsWith(':')) return 'center';
+          if (c.endsWith(':')) return 'right';
+          if (c.startsWith(':')) return 'left';
+          return 'none';
+        });
+        const tnode = { type: NodeType.TABLE, flags: 0, colCount: colAligns.length, colAligns };
+        this.#cb.onNodeOpen?.(NodeType.TABLE, tnode);
+        // Header
+        const thead = { type: NodeType.TABLE_HEAD, flags: 0 };
+        this.#cb.onNodeOpen?.(NodeType.TABLE_HEAD, thead);
+        this.#emitTableRow(tableRows[0], colAligns, true);
+        this.#cb.onNodeClose?.(NodeType.TABLE_HEAD, thead);
+        // Body rows
+        for (let r = 2; r < tableRows.length; r++)
+          this.#emitTableRow(tableRows[r], colAligns, false);
+        this.#cb.onNodeClose?.(NodeType.TABLE, tnode);
+        i = j; continue;
+      }
+
+      // HTML block
+      if (lines[i].trimStart().startsWith('<') && !lines[i].trimStart().startsWith('</')) {
+        const raw = lines[i];
+        const node = { type: NodeType.HTML_BLOCK, flags: 0, raw };
+        this.#cb.onNodeOpen?.(NodeType.HTML_BLOCK, node);
+        this.#cb.onText?.(raw);
+        this.#cb.onNodeClose?.(NodeType.HTML_BLOCK, node);
+        i++; continue;
+      }
+
+      // Paragraph: collect until blank line
+      const paraLines = [];
+      while (i < end && lines[i].trim() !== '' &&
+             !/^#{1,6}\s/.test(lines[i]) &&
+             !/^[-*+]\s/.test(lines[i]) &&
+             !/^\d+[.)]\s/.test(lines[i]) &&
+             !/^(`{3,}|~{3,})/.test(lines[i]) &&
+             !/^>/.test(lines[i])) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      if (paraLines.length) {
+        // Setext heading check
+        if (paraLines.length >= 2 && /^=+$/.test(paraLines[paraLines.length-1])) {
+          const node = { type: NodeType.HEADING, flags: 0, level: 1 };
+          this.#cb.onNodeOpen?.(NodeType.HEADING, node);
+          this.#parseInline(paraLines.slice(0,-1).join('\n'));
+          this.#cb.onNodeClose?.(NodeType.HEADING, node);
+        } else if (paraLines.length >= 2 && /^-+$/.test(paraLines[paraLines.length-1])) {
+          const node = { type: NodeType.HEADING, flags: 0, level: 2 };
+          this.#cb.onNodeOpen?.(NodeType.HEADING, node);
+          this.#parseInline(paraLines.slice(0,-1).join('\n'));
+          this.#cb.onNodeClose?.(NodeType.HEADING, node);
+        } else {
+          const node = { type: NodeType.PARAGRAPH, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.PARAGRAPH, node);
+          this.#parseInline(paraLines.join('\n'));
+          this.#cb.onNodeClose?.(NodeType.PARAGRAPH, node);
+        }
+      }
+    }
+  }
+
+  #emitTableRow(line, colAligns, isHead) {
+    const cells = line.split('|').slice(1, -1);
+    const rnode = { type: NodeType.TABLE_ROW, flags: 0 };
+    this.#cb.onNodeOpen?.(NodeType.TABLE_ROW, rnode);
+    cells.forEach((cell, idx) => {
+      const cnode = { type: NodeType.TABLE_CELL, flags: 0, align: colAligns[idx] ?? 'none', colIndex: idx };
+      this.#cb.onNodeOpen?.(NodeType.TABLE_CELL, cnode);
+      this.#parseInline(cell.trim());
+      this.#cb.onNodeClose?.(NodeType.TABLE_CELL, cnode);
+    });
+    this.#cb.onNodeClose?.(NodeType.TABLE_ROW, rnode);
+  }
+
+  #parseInline(text) {
+    // Simple regex-based inline parser
+    let i = 0;
+    const len = text.length;
+
+    const flush = (s) => {
+      if (!s) return;
+      const node = { type: NodeType.TEXT, flags: 0 };
+      this.#cb.onNodeOpen?.(NodeType.TEXT, node);
+      this.#cb.onText?.(s);
+      statChars += s.length;
+      this.#cb.onNodeClose?.(NodeType.TEXT, node);
+    };
+
+    let buf = '';
+    while (i < len) {
+      // Hard break: "  \n"
+      if (text[i] === '\n') {
+        if (buf.endsWith('  ')) {
+          flush(buf.slice(0, -2));
+          buf = '';
+          this.#cb.onNodeOpen?.(NodeType.HARD_BREAK, { type: NodeType.HARD_BREAK, flags: 0 });
+          this.#cb.onNodeClose?.(NodeType.HARD_BREAK, { type: NodeType.HARD_BREAK, flags: 0 });
+        } else {
+          flush(buf); buf = '';
+          this.#cb.onNodeOpen?.(NodeType.SOFT_BREAK, { type: NodeType.SOFT_BREAK, flags: 0 });
+          this.#cb.onNodeClose?.(NodeType.SOFT_BREAK, { type: NodeType.SOFT_BREAK, flags: 0 });
+        }
+        i++; continue;
+      }
+
+      // Autolink <...>
+      if (text[i] === '<') {
+        const end = text.indexOf('>', i+1);
+        if (end !== -1) {
+          const inner = text.slice(i+1, end);
+          const isEmail = inner.includes('@');
+          flush(buf); buf = '';
+          const node = { type: NodeType.AUTO_LINK, flags: 0, url: inner, isEmail };
+          this.#cb.onNodeOpen?.(NodeType.AUTO_LINK, node);
+          this.#cb.onText?.(inner);
+          this.#cb.onNodeClose?.(NodeType.AUTO_LINK, node);
+          i = end + 1; continue;
+        }
+      }
+
+      // Image ![alt](src)
+      if (text[i] === '!' && text[i+1] === '[') {
+        const cb = text.indexOf(']', i+2);
+        if (cb !== -1 && text[cb+1] === '(') {
+          const pe = text.indexOf(')', cb+2);
+          if (pe !== -1) {
+            flush(buf); buf = '';
+            const alt = text.slice(i+2, cb);
+            const href = text.slice(cb+2, pe);
+            const [src, title] = href.split(/ "(.*)"/);
+            const node = { type: NodeType.IMAGE, flags: 0, src: src.trim(), alt, title: title || null };
+            this.#cb.onNodeOpen?.(NodeType.IMAGE, node);
+            this.#cb.onNodeClose?.(NodeType.IMAGE, node);
+            i = pe + 1; continue;
+          }
+        }
+      }
+
+      // Link [text](href)
+      if (text[i] === '[') {
+        const cb = text.indexOf(']', i+1);
+        if (cb !== -1 && text[cb+1] === '(') {
+          const pe = text.indexOf(')', cb+2);
+          if (pe !== -1) {
+            flush(buf); buf = '';
+            const inner = text.slice(i+1, cb);
+            const rawHref = text.slice(cb+2, pe);
+            const m = rawHref.match(/^(\S+)\s+"(.*)"$/);
+            const href = m ? m[1] : rawHref;
+            const title = m ? m[2] : null;
+            const node = { type: NodeType.LINK, flags: 0, href, title };
+            this.#cb.onNodeOpen?.(NodeType.LINK, node);
+            this.#parseInline(inner);
+            this.#cb.onNodeClose?.(NodeType.LINK, node);
+            i = pe + 1; continue;
+          }
+        }
+      }
+
+      // Inline code `...`
+      if (text[i] === '`') {
+        const end = text.indexOf('`', i+1);
+        if (end !== -1) {
+          flush(buf); buf = '';
+          const code = text.slice(i+1, end);
+          const node = { type: NodeType.INLINE_CODE, flags: 0, text: code };
+          this.#cb.onNodeOpen?.(NodeType.INLINE_CODE, node);
+          this.#cb.onText?.(code);
+          this.#cb.onNodeClose?.(NodeType.INLINE_CODE, node);
+          i = end + 1; continue;
+        }
+      }
+
+      // Bold+italic ***
+      if (text.startsWith('***', i)) {
+        const end = text.indexOf('***', i+3);
+        if (end !== -1) {
+          flush(buf); buf = '';
+          const sn = { type: NodeType.STRONG, flags: 0 };
+          const en = { type: NodeType.EMPHASIS, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.STRONG, sn);
+          this.#cb.onNodeOpen?.(NodeType.EMPHASIS, en);
+          this.#parseInline(text.slice(i+3, end));
+          this.#cb.onNodeClose?.(NodeType.EMPHASIS, en);
+          this.#cb.onNodeClose?.(NodeType.STRONG, sn);
+          i = end + 3; continue;
+        }
+      }
+
+      // Bold ** or __
+      const boldMatch = text.startsWith('**', i) ? '**' : text.startsWith('__', i) ? '__' : null;
+      if (boldMatch) {
+        const end = text.indexOf(boldMatch, i+2);
+        if (end !== -1) {
+          flush(buf); buf = '';
+          const node = { type: NodeType.STRONG, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.STRONG, node);
+          this.#parseInline(text.slice(i+2, end));
+          this.#cb.onNodeClose?.(NodeType.STRONG, node);
+          i = end + 2; continue;
+        }
+      }
+
+      // Strikethrough ~~
+      if (text.startsWith('~~', i)) {
+        const end = text.indexOf('~~', i+2);
+        if (end !== -1) {
+          flush(buf); buf = '';
+          const node = { type: NodeType.STRIKETHROUGH, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.STRIKETHROUGH, node);
+          this.#parseInline(text.slice(i+2, end));
+          this.#cb.onNodeClose?.(NodeType.STRIKETHROUGH, node);
+          i = end + 2; continue;
+        }
+      }
+
+      // Italic * or _
+      const emMatch = (text[i] === '*' && text[i+1] !== '*') ? '*'
+                    : (text[i] === '_' && text[i+1] !== '_') ? '_' : null;
+      if (emMatch) {
+        const end = text.indexOf(emMatch, i+1);
+        if (end !== -1 && end > i+1) {
+          flush(buf); buf = '';
+          const node = { type: NodeType.EMPHASIS, flags: 0 };
+          this.#cb.onNodeOpen?.(NodeType.EMPHASIS, node);
+          this.#parseInline(text.slice(i+1, end));
+          this.#cb.onNodeClose?.(NodeType.EMPHASIS, node);
+          i = end + 1; continue;
+        }
+      }
+
+      buf += text[i++];
+    }
+    flush(buf);
+  }
+}
+
+// ── Core actions ──────────────────────────────────────────────────────────────
+function runParse() {
+  const md = editor.value;
+  clearEvents();
+  astTree.innerHTML  = '';
+  preview.innerHTML  = '';
+  resetStats();
+
+  const t0 = performance.now();
+  const callbacks = {
+    onNodeOpen(type, node) {
+      statEvents++; statNodes++;
+      const attrStr = nodeAttrs(type, node);
+      addEvent('open', type, attrStr);
+      updateStats();
+    },
+    onNodeClose(type) {
+      statEvents++;
+      addEvent('close', type);
+      updateStats();
+    },
+    onText(text) {
+      statEvents++; statChars += text.length;
+      const display = text.slice(0, 40).replace(/\n/g, '↵');
+      addEvent('text', NodeType.TEXT, `"${display}${text.length > 40 ? '…' : ''}"`);
+      updateStats();
+    },
+    onModify(type, node) {
+      statEvents++;
+      addEvent('modify', type, nodeAttrs(type, node));
+      updateStats();
+    },
+  };
+
+  const p = new DemoParser(callbacks);
+  p.feed(md).finish();
+
+  statTime = Math.round(performance.now() - t0);
+  updateStats();
+
+  // AST tab
+  const ast = buildAST(md);
+  astTree.appendChild(renderAST(ast));
+
+  // Preview tab
+  preview.innerHTML = renderHTMLPreview(md);
+}
+
+function nodeAttrs(type, node) {
+  const parts = [];
+  if (node.level)                       parts.push(`level=${node.level}`);
+  if (node.lang)                        parts.push(`lang="${node.lang}"`);
+  if (node.fenced !== undefined)        parts.push(`fenced=${node.fenced}`);
+  if (node.ordered !== undefined)       parts.push(node.ordered ? 'ordered' : 'unordered');
+  if (node.href)                        parts.push(`href="${node.href}"`);
+  if (node.src)                         parts.push(`src="${node.src}"`);
+  if (node.url)                         parts.push(`url="${node.url}"`);
+  if (node.colCount !== undefined)      parts.push(`cols=${node.colCount}`);
+  if (node.align && node.align!=='none') parts.push(`align=${node.align}`);
+  if (node.checked !== undefined)       parts.push(`checked=${node.checked}`);
+  if (node.isEmail !== undefined)       parts.push(`isEmail=${node.isEmail}`);
+  return parts.join(' ');
+}
+
+// ── Live preview helper ───────────────────────────────────────────────────────
+// Wraps the preview container; `render(text)` re-renders partial markdown
+// and appends a blinking cursor to signal ongoing streaming.
+
+function makeLivePreview(container) {
+  let streaming = true;
+
+  return {
+    render(text) {
+      const html = renderHTMLPreview(text);
+      container.innerHTML = html + (streaming
+        ? '<span class="stream-cursor"></span>'
+        : '');
+    },
+    stop() {
+      streaming = false;
+      // Remove cursor from whatever is currently shown
+      const cur = container.querySelector('.stream-cursor');
+      if (cur) cur.remove();
+    },
+  };
+}
+
+// ── Streaming simulation ──────────────────────────────────────────────────────
+let streamAbort = null;
+
+async function runStream() {
+  if (streamAbort) { streamAbort(); return; }
+
+  clearEvents();
+  astTree.innerHTML = '';
+  preview.innerHTML = '';
+  resetStats();
+
+  const md = editor.value;
+  const delay = () => parseInt(speedSlider.value);
+
+  streamBtn.textContent = '■ Stop';
+  parseBtn.disabled = true;
+
+  // Auto-switch to Preview tab so the typewriter effect is immediately visible
+  switchTab('preview');
+
+  let cancelled = false;
+  streamAbort = () => { cancelled = true; };
+
+  // ── event parser (batch, fires on finish) ──
+  const allEvents = [];
+  const evParser = new DemoParser({
+    onNodeOpen(type, node)  { allEvents.push({ kind: 'open',   type, node }); statEvents++; statNodes++; },
+    onNodeClose(type, node) { allEvents.push({ kind: 'close',  type, node }); statEvents++; },
+    onText(text)            { allEvents.push({ kind: 'text',   text });       statEvents++; statChars += text.length; },
+    onModify(type, node)    { allEvents.push({ kind: 'modify', type, node }); statEvents++; },
+  });
+
+  // ── live preview renderer ──
+  // Maintains a DOM element stack.  onNodeOpen pushes, onNodeClose pops,
+  // onText appends text, onModify swaps the top element's tag.
+  const livePreview = makeLivePreview(preview);
+
+  const CHUNK = 7;
+  const t0 = performance.now();
+  let accumulated = '';
+
+  for (let i = 0; i < md.length && !cancelled; i += CHUNK) {
+    const chunk = md.slice(i, i + CHUNK);
+    accumulated += chunk;
+
+    // Update preview incrementally: re-render the accumulated text snapshot.
+    // This gives a "typewriter" effect matching what a real incremental parser
+    // would produce — the preview grows visibly as tokens arrive.
+    livePreview.render(accumulated);
+
+    updateStats();
+    await new Promise(r => setTimeout(r, delay()));
+  }
+
+  if (!cancelled) {
+    // Final full parse to produce event stream + AST
+    evParser.feed(md).finish();
+    while (allEvents.length) {
+      const ev = allEvents.shift();
+      if (ev.kind === 'open')   addEvent('open',   ev.type, nodeAttrs(ev.type, ev.node || {}));
+      if (ev.kind === 'close')  addEvent('close',  ev.type);
+      if (ev.kind === 'text')   addEvent('text',   NodeType.TEXT, `"${ev.text.slice(0,40).replace(/\n/g,'↵')}"`);
+      if (ev.kind === 'modify') addEvent('modify', ev.type, nodeAttrs(ev.type, ev.node || {}));
+    }
+    statTime = Math.round(performance.now() - t0);
+    updateStats();
+
+    // Final AST + preview render
+    astTree.innerHTML = '';
+    astTree.appendChild(renderAST(buildAST(md)));
+    livePreview.stop();
+    livePreview.render(md); // ensure final state is accurate
+  }
+
+  livePreview.stop();
+  streamAbort = null;
+  streamBtn.textContent = '▶ Stream';
+  parseBtn.disabled = false;
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+streamBtn.addEventListener('click', runStream);
+parseBtn.addEventListener('click', runParse);
+clearBtn.addEventListener('click', () => {
+  editor.value = '';
+  evStream.innerHTML = '';
+  astTree.innerHTML  = '';
+  preview.innerHTML  = '';
+  resetStats();
+});
+
+// Auto-parse on edit (debounced)
+let debounceTimer;
+editor.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(runParse, 600);
+});
+
+// Initial parse
+runParse();
+</script>
+</body>
+</html>

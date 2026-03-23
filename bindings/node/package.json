@@ -1,0 +1,14 @@
+{
+  "name": "mk-parser-native",
+  "version": "0.1.0",
+  "description": "Incremental Markdown parser (native Node.js addon)",
+  "main": "index.js",
+  "scripts": {
+    "build": "node-gyp build",
+    "rebuild": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "gypfile": true
+}

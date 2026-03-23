@@ -1,0 +1,29 @@
+[versions]
+agp              = "8.4.0"
+kotlin           = "2.0.0"
+coreKtx          = "1.13.1"
+lifecycleRuntime = "2.8.3"
+activityCompose  = "1.9.0"
+composeBom       = "2024.06.00"
+coroutines       = "1.8.1"
+okhttp           = "4.12.0"
+
+[libraries]
+androidx-core-ktx               = { group = "androidx.core",          name = "core-ktx",                version.ref = "coreKtx" }
+androidx-lifecycle-runtime-ktx  = { group = "androidx.lifecycle",     name = "lifecycle-runtime-ktx",   version.ref = "lifecycleRuntime" }
+androidx-lifecycle-viewmodel    = { group = "androidx.lifecycle",     name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntime" }
+androidx-activity-compose       = { group = "androidx.activity",      name = "activity-compose",         version.ref = "activityCompose" }
+compose-bom                     = { group = "androidx.compose",       name = "compose-bom",              version.ref = "composeBom" }
+compose-ui                      = { group = "androidx.compose.ui",    name = "ui" }
+compose-ui-graphics             = { group = "androidx.compose.ui",    name = "ui-graphics" }
+compose-ui-tooling-preview      = { group = "androidx.compose.ui",    name = "ui-tooling-preview" }
+compose-material3               = { group = "androidx.compose.material3", name = "material3" }
+compose-ui-tooling              = { group = "androidx.compose.ui",    name = "ui-tooling" }
+kotlinx-coroutines-android      = { group = "org.jetbrains.kotlinx",  name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+okhttp                          = { group = "com.squareup.okhttp3",    name = "okhttp",                   version.ref = "okhttp" }
+okhttp-sse                      = { group = "com.squareup.okhttp3",    name = "okhttp-sse",               version.ref = "okhttp" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android      = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose      = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -1,0 +1,16 @@
+# ninja log v5
+1	81	1774265497694737742	CMakeFiles/mk_parser_jni.dir/mk_parser/src/ast.c.o	9f9427151abb72de
+1	82	1774265497694852575	CMakeFiles/mk_parser_jni.dir/mk_parser/src/plugin.c.o	d0be04a1a79f1b28
+1	82	1774265497696546067	CMakeFiles/mk_parser_jni.dir/mk_parser/src/parser.c.o	2e4da0d9cf2c822d
+2	83	1774265497697160773	CMakeFiles/mk_parser_jni.dir/mk_parser/src/getters.c.o	9cf8f57aa2091067
+1	84	1774265497698073935	CMakeFiles/mk_parser_jni.dir/mk_parser/src/arena.c.o	8faf7e5c1942c92e
+1	137	1774265497749573744	CMakeFiles/mk_parser_jni.dir/mk_parser/src/inline_parser.c.o	f631e8e8b1ec83e4
+1	180	1774265497791712053	CMakeFiles/mk_parser_jni.dir/mk_parser/src/block.c.o	52841495763cd076
+0	167	1774265550348895476	CMakeFiles/mk_parser_jni.dir/mk_jni.c.o	40a32c1df78d5a30
+167	279	1774265550459605056	/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/build/intermediates/cxx/Debug/515v2t4l/obj/arm64-v8a/libmk_parser_jni.so	2710ffc205e1b8ea
+1	220	1774267273544687360	CMakeFiles/mk_parser_jni.dir/mk_jni.c.o	40a32c1df78d5a30
+220	361	1774267273686033885	/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/build/intermediates/cxx/Debug/515v2t4l/obj/arm64-v8a/libmk_parser_jni.so	2710ffc205e1b8ea
+0	193	1774267520827901376	CMakeFiles/mk_parser_jni.dir/mk_jni.c.o	40a32c1df78d5a30
+193	317	1774267520951943104	/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/build/intermediates/cxx/Debug/515v2t4l/obj/arm64-v8a/libmk_parser_jni.so	2710ffc205e1b8ea
+1	207	1774267987655005328	CMakeFiles/mk_parser_jni.dir/mk_jni.c.o	40a32c1df78d5a30
+207	331	1774267987778846058	/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/build/intermediates/cxx/Debug/515v2t4l/obj/arm64-v8a/libmk_parser_jni.so	2710ffc205e1b8ea

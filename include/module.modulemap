@@ -1,0 +1,7 @@
+// module.modulemap — enables "import mk_parser" from Swift
+// Place this file at: include/module.modulemap
+
+module mk_parser {
+    header "mk_parser.h"
+    export *
+}
