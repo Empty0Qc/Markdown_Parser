@@ -1,3 +1,0 @@
-/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/.cxx/Debug/515v2t4l/arm64-v8a/CMakeFiles/mk_parser_jni.dir
-/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/.cxx/Debug/515v2t4l/arm64-v8a/CMakeFiles/edit_cache.dir
-/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/.cxx/Debug/515v2t4l/arm64-v8a/CMakeFiles/rebuild_cache.dir

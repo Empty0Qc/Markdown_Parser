@@ -1,1 +1,0 @@
-/Users/didi/Library/Mobile Documents/com~apple~CloudDocs/Desktop/personal_p/mk_p/demo/android/app/src/main/cpp/CMakeLists.txt

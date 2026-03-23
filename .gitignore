@@ -4,6 +4,10 @@
 
 build/
 demo/android/build/
+demo/android/.gradle/
+demo/android/.idea/
+demo/android/app/.cxx/
+demo/android/local.properties
 
 *.o
 
