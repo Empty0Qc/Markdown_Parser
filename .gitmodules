@@ -1,0 +1,3 @@
+[submodule "ai-skills"]
+	path = ai-skills
+	url = git@github.com:Empty0Qc/ai-skills.git

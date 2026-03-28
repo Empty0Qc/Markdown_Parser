@@ -3,6 +3,9 @@
 
 .claude/
 
+# ai-skills runtime state (generated, not committed)
+.ai/context/
+
 build/
 demo/android/build/
 demo/android/.gradle/
