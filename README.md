@@ -6,7 +6,7 @@ Incremental Markdown parser designed for AI streaming scenarios. Written in pure
 LLM token stream  →  mk_feed()  →  on_node_open / on_text / on_node_close
 ```
 
-> **New to this project?** Read the [Project Overview](docs/OVERVIEW.md) for a full walkthrough of the architecture, modules, capabilities, and design rationale.
+> **New to this project?** Read the [Architecture Overview](docs/ARCHITECTURE.md) for a full walkthrough of the architecture, modules, capabilities, and design rationale.
 
 ---
 
@@ -182,7 +182,7 @@ cmake -B build/native \
       -DCMAKE_BUILD_TYPE=Release \
       -DMK_BUILD_TESTS=ON
 cmake --build build/native
-ctest --test-dir build/native   # 55 tests
+ctest --test-dir build/native
 ```
 
 ---
@@ -211,11 +211,13 @@ mk_p/
 │   │   ├── binding.gyp      node-gyp build
 │   │   └── index.js         Entry point
 │   ├── js/
-│   │   ├── types.ts         TypeScript type definitions (all 25 nodes)
+│   │   ├── types.d.ts       TypeScript declarations (all 25 nodes)
+│   │   ├── mk_parser_cjs.cjs CJS wrapper
 │   │   └── mk_parser_wasm.js WasmMkParser class + parseToAST()
 │   ├── android/
 │   │   ├── mk_jni.c         JNI bridge (nativeCreate/Feed/Finish/Destroy)
 │   │   ├── MkParser.kt      Kotlin wrapper with lambda callbacks
+│   │   ├── lib/             Standalone Android library project (Gradle)
 │   │   └── CMakeLists.txt   NDK SHARED lib (arm64 / x86_64)
 │   └── ios/
 │       ├── MkParser.swift   Swift wrapper (MkNodeInfo, MkParser class)
@@ -227,17 +229,24 @@ mk_p/
 │   │   ├── test_ast.c       13 tests
 │   │   ├── test_block.c     15 tests
 │   │   └── test_inline.c    18 tests
-│   └── integration/
-│       └── test_streaming.c 10 tests (byte-by-byte, chunk, Pull API)
+│   ├── integration/
+│   │   └── test_streaming.c 10 tests (byte-by-byte, chunk, Pull API)
+│   └── spec/
+│       ├── spec.json        CommonMark spec test cases
+│       ├── mk_html.c / .h   HTML renderer for spec compliance
+│       └── test_spec.c      Spec-driven test runner
 ├── demo/
 │   ├── web/index.html       Zero-dependency live demo (open in browser)
-│   └── android/             Jetpack Compose demo with native Markdown renderer
+│   ├── android/             Jetpack Compose demo with native Markdown renderer
+│   └── ios/                 SwiftUI demo with OpenAI / Mock streaming providers
+├── docs/
+│   ├── ARCHITECTURE.md      Architecture overview, modules, design rationale
+│   └── AGENT_CONTEXT.md     Context for AI-assisted development
 ├── cmake/
 │   ├── options.cmake
 │   └── toolchains/          wasm / android / ios toolchain files
 ├── Package.swift            Swift Package Manager config
-├── build.sh                 Multi-platform build script
-└── PROGRESS.md              Milestone tracker
+└── build.sh                 Multi-platform build script
 ```
 
 ---
@@ -388,7 +397,8 @@ ctest --test-dir build --output-on-failure
 | Block | tests/unit/test_block.c | 15 |
 | Inline | tests/unit/test_inline.c | 18 |
 | Streaming | tests/integration/test_streaming.c | 10 |
-| **Total** | | **67** |
+| CommonMark spec | tests/spec/test_spec.c | spec.json |
+| **Total (unit+integration)** | | **67** |
 
 ---
 
@@ -412,6 +422,7 @@ ctest --test-dir build --output-on-failure
 | M10 Web demo | ✅ |
 | M11 C unit tests | ✅ |
 | M12 Android native Compose renderer | ✅ |
+| M12 iOS native SwiftUI renderer | ✅ |
 
 ---
 

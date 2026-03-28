@@ -6,7 +6,7 @@
 LLM token 流  →  mk_feed()  →  on_node_open / on_text / on_node_close
 ```
 
-> **第一次接触本项目？** 阅读 [项目全览](docs/OVERVIEW.md)，系统了解架构设计、各模块职责、对外能力与核心优势。
+> **第一次接触本项目？** 阅读 [架构总览](docs/ARCHITECTURE.md)，系统了解架构设计、各模块职责、对外能力与核心优势。
 
 ---
 
@@ -128,6 +128,16 @@ parser.feed("# 你好\n").finish().destroy()
 
 详见 [`demo/android/README.md`](demo/android/README.md)。
 
+### iOS Demo — 原生 SwiftUI 渲染器
+
+演示应用（`demo/ios/`）是 Android Demo 的 iOS 对等版：一个 SwiftUI 应用，实时渲染 mk_parser 推送事件流。
+
+架构与 Android 版相同——push 事件流入 `MkBlockParser`，产出扁平的 `[MkBlock]` 数组（Swift `enum` + 关联值），`MkRenderView` 在 SwiftUI `List`（key 为稳定 ID）中渲染每个块。流式光标通过 `Timer` 驱动的透明度切换实现动画效果。支持 OpenAI API 和内置 Mock provider。
+
+Xcode 打开方式：`File → Open → demo/ios/Package.swift`
+
+详见 [`demo/ios/README.md`](demo/ios/README.md)。
+
 ---
 
 ## 构建
@@ -149,6 +159,8 @@ parser.feed("# 你好\n").finish().destroy()
 ./build.sh wasm      # → build/wasm/mk_parser.{js,wasm}
 ./build.sh android   # → build/android/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/
 ./build.sh ios       # → build/ios/MkParser.xcframework
+./build.sh bench     # → 构建 native + 运行多场景吞吐量 benchmark
+./build.sh npm-pack  # → 构建 WASM + npm pack --dry-run（验证 npm 包）
 ./build.sh all       # 以上全部
 ```
 
@@ -188,11 +200,13 @@ mk_p/
 │   │   ├── binding.gyp      node-gyp 构建配置
 │   │   └── index.js         入口文件
 │   ├── js/
-│   │   ├── types.ts         TypeScript 完整类型定义（25 种节点）
+│   │   ├── types.d.ts       TypeScript 完整类型声明（25 种节点）
+│   │   ├── mk_parser_cjs.cjs CJS 封装
 │   │   └── mk_parser_wasm.js  WasmMkParser 类 + parseToAST()
 │   ├── android/
 │   │   ├── mk_jni.c         JNI 桥接（nativeCreate/Feed/Finish/Destroy）
 │   │   ├── MkParser.kt      Kotlin 封装类（Lambda 回调）
+│   │   ├── lib/             独立 Android 库工程（Gradle）
 │   │   └── CMakeLists.txt   NDK SHARED 库（arm64 / x86_64）
 │   └── ios/
 │       ├── MkParser.swift   Swift 封装（MkNodeInfo 结构体 + MkParser 类）
@@ -204,17 +218,24 @@ mk_p/
 │   │   ├── test_ast.c       13 个测试
 │   │   ├── test_block.c     15 个测试
 │   │   └── test_inline.c    18 个测试
-│   └── integration/
-│       └── test_streaming.c 10 个测试（逐字节 / 分块 / Pull API）
+│   ├── integration/
+│   │   └── test_streaming.c 10 个测试（逐字节 / 分块 / Pull API）
+│   └── spec/
+│       ├── spec.json        CommonMark 规范测试用例
+│       ├── mk_html.c / .h   规范合规性 HTML 渲染器
+│       └── test_spec.c      规范驱动测试运行器
 ├── demo/
 │   ├── web/index.html       零依赖在线 Demo（直接浏览器打开）
-│   └── android/             Jetpack Compose 演示应用（含原生 Markdown 渲染器）
+│   ├── android/             Jetpack Compose 演示应用（含原生 Markdown 渲染器）
+│   └── ios/                 SwiftUI 演示应用（含 OpenAI / Mock 流式 provider）
+├── docs/
+│   ├── ARCHITECTURE.md      架构总览、模块说明、设计决策
+│   └── AGENT_CONTEXT.md     AI 协作开发上下文
 ├── cmake/
 │   ├── options.cmake        构建选项
 │   └── toolchains/          wasm / android / ios 工具链文件
 ├── Package.swift            Swift Package Manager 配置
-├── build.sh                 多平台构建脚本
-└── PROGRESS.md              里程碑进度追踪
+└── build.sh                 多平台构建脚本
 ```
 
 ---
@@ -364,7 +385,8 @@ ctest --test-dir build --output-on-failure
 | Block | tests/unit/test_block.c | 15 |
 | Inline | tests/unit/test_inline.c | 18 |
 | 流式集成 | tests/integration/test_streaming.c | 10 |
-| **合计** | | **67** |
+| CommonMark 规范 | tests/spec/test_spec.c | spec.json |
+| **合计（单元+集成）** | | **67** |
 
 ---
 
@@ -388,6 +410,7 @@ ctest --test-dir build --output-on-failure
 | M10 Web Demo | ✅ |
 | M11 C 单元测试（67 个） | ✅ |
 | M12 Android 原生 Compose 渲染器 | ✅ |
+| M12 iOS 原生 SwiftUI 渲染器 | ✅ |
 
 ---
 
