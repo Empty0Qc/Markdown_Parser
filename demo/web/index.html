@@ -1104,61 +1104,70 @@ async function runStream() {
   streamBtn.textContent = '■ Stop';
   parseBtn.disabled = true;
 
-  // Auto-switch to Preview tab so the typewriter effect is immediately visible
-  switchTab('preview');
-
   let cancelled = false;
   streamAbort = () => { cancelled = true; };
 
-  // ── event parser (batch, fires on finish) ──
-  const allEvents = [];
-  const evParser = new DemoParser({
-    onNodeOpen(type, node)  { allEvents.push({ kind: 'open',   type, node }); statEvents++; statNodes++; },
-    onNodeClose(type, node) { allEvents.push({ kind: 'close',  type, node }); statEvents++; },
-    onText(text)            { allEvents.push({ kind: 'text',   text });       statEvents++; statChars += text.length; },
-    onModify(type, node)    { allEvents.push({ kind: 'modify', type, node }); statEvents++; },
-  });
-
   // ── live preview renderer ──
-  // Maintains a DOM element stack.  onNodeOpen pushes, onNodeClose pops,
-  // onText appends text, onModify swaps the top element's tag.
   const livePreview = makeLivePreview(preview);
 
   const CHUNK = 7;
   const t0 = performance.now();
   let accumulated = '';
 
+  // Re-render all three panels from the accumulated text on each tick.
+  // Events and AST are rebuilt from scratch (same pattern as Preview's
+  // full re-render), so all panels stay in sync as tokens arrive.
+  function renderTick(text, streaming) {
+    // ── Events ──
+    // Save scroll position so the list doesn't jump to top on each rebuild.
+    const evScrollBottom =
+      evStream.scrollHeight - evStream.scrollTop - evStream.clientHeight < 40;
+    evIdx = 0;
+    evStream.innerHTML = '';
+    statEvents = statNodes = statChars = 0;
+    const tickP = new DemoParser({
+      onNodeOpen(type, node) {
+        statEvents++; statNodes++;
+        addEvent('open', type, nodeAttrs(type, node));
+      },
+      onNodeClose(type) {
+        statEvents++;
+        addEvent('close', type);
+      },
+      onText(t) {
+        statEvents++; statChars += t.length;
+        addEvent('text', NodeType.TEXT, `"${t.slice(0,40).replace(/\n/g,'↵')}${t.length>40?'…':''}"`);
+      },
+      onModify(type, node) {
+        statEvents++;
+        addEvent('modify', type, nodeAttrs(type, node));
+      },
+    });
+    tickP.feed(text).finish();
+    if (evScrollBottom) evStream.scrollTop = evStream.scrollHeight;
+
+    // ── AST ──
+    astTree.innerHTML = '';
+    astTree.appendChild(renderAST(buildAST(text)));
+
+    // ── Preview ──
+    if (streaming) livePreview.render(text);
+    else           { livePreview.stop(); livePreview.render(text); }
+  }
+
   for (let i = 0; i < md.length && !cancelled; i += CHUNK) {
-    const chunk = md.slice(i, i + CHUNK);
-    accumulated += chunk;
-
-    // Update preview incrementally: re-render the accumulated text snapshot.
-    // This gives a "typewriter" effect matching what a real incremental parser
-    // would produce — the preview grows visibly as tokens arrive.
-    livePreview.render(accumulated);
-
+    accumulated += md.slice(i, i + CHUNK);
+    renderTick(accumulated, true);
+    statTime = Math.round(performance.now() - t0);
     updateStats();
     await new Promise(r => setTimeout(r, delay()));
   }
 
   if (!cancelled) {
-    // Final full parse to produce event stream + AST
-    evParser.feed(md).finish();
-    while (allEvents.length) {
-      const ev = allEvents.shift();
-      if (ev.kind === 'open')   addEvent('open',   ev.type, nodeAttrs(ev.type, ev.node || {}));
-      if (ev.kind === 'close')  addEvent('close',  ev.type);
-      if (ev.kind === 'text')   addEvent('text',   NodeType.TEXT, `"${ev.text.slice(0,40).replace(/\n/g,'↵')}"`);
-      if (ev.kind === 'modify') addEvent('modify', ev.type, nodeAttrs(ev.type, ev.node || {}));
-    }
+    // Final pass: ensure the complete document is rendered accurately.
+    renderTick(md, false);
     statTime = Math.round(performance.now() - t0);
     updateStats();
-
-    // Final AST + preview render
-    astTree.innerHTML = '';
-    astTree.appendChild(renderAST(buildAST(md)));
-    livePreview.stop();
-    livePreview.render(md); // ensure final state is accurate
   }
 
   livePreview.stop();
