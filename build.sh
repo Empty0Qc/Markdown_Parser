@@ -6,12 +6,14 @@ BUILD_TYPE=${BUILD_TYPE:-Release}
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 usage() {
-    echo "Usage: $0 [native|wasm|android|ios|all]"
-    echo "  native   — build for current host (default)"
-    echo "  wasm     — build for WebAssembly (requires Emscripten)"
-    echo "  android  — build for Android arm64-v8a (requires ANDROID_NDK)"
-    echo "  ios      — build for iOS device + simulator (requires Xcode)"
-    echo "  all      — build all targets"
+    echo "Usage: $0 [native|wasm|android|ios|all|bench|npm-pack]"
+    echo "  native    — build for current host (default)"
+    echo "  wasm      — build for WebAssembly (requires Emscripten)"
+    echo "  android   — build for Android arm64-v8a (requires ANDROID_NDK)"
+    echo "  ios       — build for iOS device + simulator (requires Xcode)"
+    echo "  all       — build all targets"
+    echo "  bench     — build native + run throughput benchmark"
+    echo "  npm-pack  — build WASM + validate npm package (dry-run)"
     exit 1
 }
 
@@ -69,11 +71,34 @@ build_ios() {
     echo "  Note: xcframework packaging handled by bindings/ios/"
 }
 
+bench() {
+    echo "▶ Building native (bench)..."
+    cmake -B "$ROOT/build/native" \
+          -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+          -DMK_BUILD_TESTS=ON
+    cmake --build "$ROOT/build/native" --parallel \
+          --target mk_parser_bench_parser
+    echo "▶ Running benchmark..."
+    "$ROOT/build/native/tests/mk_parser_bench_parser"
+}
+
+npm_pack() {
+    echo "▶ Building WASM for npm pack..."
+    build_wasm
+    echo "▶ Copying WASM artifacts..."
+    cp "$ROOT/build/wasm/mk_parser.js"   "$ROOT/bindings/js/mk_parser.js"
+    cp "$ROOT/build/wasm/mk_parser.wasm" "$ROOT/bindings/js/mk_parser.wasm"
+    echo "▶ Running npm pack --dry-run..."
+    cd "$ROOT/bindings/js" && npm pack --dry-run
+}
+
 case "$TARGET" in
-    native)  build_native  ;;
-    wasm)    build_wasm    ;;
-    android) build_android ;;
-    ios)     build_ios     ;;
+    native)   build_native  ;;
+    wasm)     build_wasm    ;;
+    android)  build_android ;;
+    ios)      build_ios     ;;
+    bench)    bench         ;;
+    npm-pack) npm_pack      ;;
     all)
         build_native
         build_wasm

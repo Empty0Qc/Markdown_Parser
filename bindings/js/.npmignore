@@ -1,0 +1,28 @@
+# Ignore source / build artifacts not needed in the published package
+*.ts
+!*.d.ts
+
+# Build scripts
+Makefile
+*.sh
+
+# Development configs
+.eslintrc*
+.prettierrc*
+tsconfig*.json
+jest.config.*
+vitest.config.*
+
+# Test files
+*.test.*
+*.spec.*
+__tests__/
+
+# Docs (README.md is included by default, others excluded)
+CHANGELOG.md
+CONTRIBUTING.md
+
+# Local build artefacts
+node_modules/
+dist/
+build/

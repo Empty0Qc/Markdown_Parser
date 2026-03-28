@@ -1,27 +1,43 @@
 {
   "name": "mk-parser",
   "version": "0.1.0",
-  "description": "Incremental Markdown parser for AI streaming scenarios",
+  "description": "Incremental Markdown parser for AI streaming scenarios — WASM-powered, zero dependencies",
   "type": "module",
+  "main": "./mk_parser_cjs.cjs",
+  "module": "./mk_parser_wasm.js",
+  "types": "./types.d.ts",
   "exports": {
     ".": {
       "import": "./mk_parser_wasm.js",
       "require": "./mk_parser_cjs.cjs"
     },
-    "./types": "./types.ts",
+    "./types": "./types.d.ts",
     "./wasm-api": "./mk_wasm_api.js"
   },
   "files": [
     "mk_parser_wasm.js",
     "mk_parser_cjs.cjs",
-    "types.ts",
+    "types.d.ts",
     "mk_parser.js",
-    "mk_parser.wasm"
+    "mk_parser.wasm",
+    "README.md"
   ],
   "scripts": {
-    "build:wasm": "cd ../.. && bash build.sh wasm",
-    "copy:wasm":  "cp ../../build/wasm/mk_parser.js . && cp ../../build/wasm/mk_parser.wasm ."
+    "build:wasm":      "cd ../.. && bash build.sh wasm",
+    "copy:wasm":       "cp ../../build/wasm/mk_parser.js . && cp ../../build/wasm/mk_parser.wasm .",
+    "prepublishOnly":  "npm run build:wasm && npm run copy:wasm"
   },
-  "keywords": ["markdown", "parser", "streaming", "wasm", "incremental"],
-  "license": "MIT"
+  "keywords": ["markdown", "parser", "streaming", "wasm", "incremental", "gfm", "commonmark", "ai"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/mk-parser.git"
+  },
+  "homepage": "https://github.com/your-org/mk-parser#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=14"
+  }
 }

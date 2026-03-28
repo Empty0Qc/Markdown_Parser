@@ -9,6 +9,19 @@ demo/android/.idea/
 demo/android/app/.cxx/
 demo/android/local.properties
 
+# Swift Package Manager / Xcode build output
+.build/
+demo/ios/.build/
+*.xcodeproj/
+*.xcworkspace/
+*.resolved
+
+# Android library build artifacts
+bindings/android/lib/.cxx/
+bindings/android/lib/.gradle/
+bindings/android/lib/local.properties
+bindings/android/lib/build/
+
 *.o
 
 smoke_test

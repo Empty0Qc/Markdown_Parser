@@ -44,14 +44,68 @@
 | M10 Web Demo | `demo/web/` | GPT |
 | M11 测试 | `tests/` | 共同 |
 
-## PROGRESS.md 协议
-
-- 开始一个任务前：将状态改为 `🔄`
-- 完成一个任务后：将状态改为 `✅`，并在 Notes 列填写关键产物或注意点
-- 发现 blocker：将状态改为 `🔒`，在 Notes 列描述阻塞原因
-- **GPT 完成任务后必须更新 PROGRESS.md**，这是两个 AI 之间的同步机制
-
 ## 分支/提交约定
 
 - 提交信息格式：`[Mxx] 简短描述`，例如 `[M2] implement arena bump allocator`
 - 每个模块完成后打 tag：`m1-done`, `m2-done` …
+
+---
+
+## 踩坑记录
+
+### Android JNI：`NewStringUTF` 崩溃（Modified UTF-8 问题）
+
+**现象**：`input is not valid Modified UTF-8: illegal start byte 0xXX`，VM abort。
+
+**原因**：C 解析器 `on_text` 回调给出的是 `(text, len)` 切片，text 指针可能指向多字节 UTF-8 字符中间（continuation byte），而 `NewStringUTF` 要求 Modified UTF-8，遇到非法起始字节直接 abort。
+
+**修复**：`jstring_from_slice()` 改为完整的 UTF-8→UTF-16 解码器，用 `NewString(env, jchar*, len)` 写入；无效字节替换为 U+FFFD，绝不 abort。见 `bindings/android/mk_jni.c`。
+
+**同理**：`java_string_to_utf8()` 也不能用 `GetStringUTFChars`（返回 Modified UTF-8，emoji 会编码为代理对的两段 3 字节序列），必须走 UTF-16→UTF-8 手工转换。
+
+---
+
+### Android：`RecyclerView GapWorker` 预取导致 ANR
+
+**现象**：主线程卡死，调用栈含 `GapWorker.prefetch` → `onBindViewHolder` → `MkBlockParser.parse` → `MkParser.nativeFeed`（native）。
+
+**原因**：`GapWorker` 在主线程上提前调用 `onBindViewHolder` 做预取，而 `parse()` 是同步耗时操作，link 多的 Markdown 尤其明显。
+
+**修复**：将 parse 移到 `Dispatchers.Default` 协程，主线程仅提交 `submitBlocks`。见 `ContentStreamInfoView`。
+
+---
+
+### Android：View 生命周期与 CoroutineScope
+
+**现象**：改异步后静态/流式渲染全失效，scope 为 null。
+
+**原因**：`HoleNormalViewHolder.removeAndCreate()` 调用 `renderBlocks()` → `refreshData()` 时，View 还未 `addView()`，`onAttachedToWindow()` 尚未触发，scope 未初始化。
+
+**修复**：`scope` 必须在字段声明处初始化（非 null），`onDetachedFromWindow` 取消后立即重建：
+
+```kotlin
+private var scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+override fun onDetachedFromWindow() {
+    super.onDetachedFromWindow()
+    scope.cancel()
+    scope = CoroutineScope(Dispatchers.Main + SupervisorJob())  // 立即重建！
+}
+```
+
+---
+
+### Android 库发布：iCloud 路径含空格无法用 `includeBuild`
+
+**现象**：`includeBuild` 在 `android-assistant` 中失效，Gradle 解析 iCloud 路径 symlink 到真实路径后，URI 中空格导致 `settings.gradle.kts` 找不到。
+
+**修复**：放弃 composite build，改为 `publishToMavenLocal` + `mavenLocal()` 依赖。每次修改 `mk_p` 代码后手动 bump 版本号并重新发布。发布命令见 `bindings/android/lib/README`（或 memory 文件）。
+
+---
+
+### Gradle：Kotlin source dir `".."` 触发 8.7 严格校验
+
+**现象**：`compileReleaseKotlin uses output of configureCMake without declaring dependency`。
+
+**原因**：`kotlin.srcDirs("..")` 把整个 `bindings/android/` 目录包含进来，与 CMake 构建输出目录重叠，Gradle 8.7 的严格任务依赖校验报错。
+
+**修复**：将 `MkParser.kt` 复制到 `lib/src/main/kotlin/com/mkparser/MkParser.kt`，source set 只声明 `"src/main/kotlin"`，两份文件需保持同步。

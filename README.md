@@ -6,6 +6,8 @@ Incremental Markdown parser designed for AI streaming scenarios. Written in pure
 LLM token stream  →  mk_feed()  →  on_node_open / on_text / on_node_close
 ```
 
+> **New to this project?** Read the [Project Overview](docs/OVERVIEW.md) for a full walkthrough of the architecture, modules, capabilities, and design rationale.
+
 ---
 
 ## Why mk-parser?
@@ -133,6 +135,20 @@ thematic breaks, and GFM tables. Inline spans: **bold**, *italic*,
 
 See [`demo/android/README.md`](demo/android/README.md) for full details.
 
+### iOS demo — native SwiftUI renderer
+
+The demo app (`demo/ios/`) is the iOS equivalent of the Android demo: a SwiftUI
+application that renders the mk_parser push-event stream in real time.
+
+Same architecture as Android — push events flow into `MkBlockParser`, which
+produces a flat `[MkBlock]` array (Swift `enum` with associated values), and
+`MkRenderView` renders each block in a SwiftUI `List` keyed by stable IDs.
+Streaming cursor animates via a `Timer`-driven opacity toggle.
+
+Open in Xcode: `File → Open → demo/ios/Package.swift`
+
+See [`demo/ios/README.md`](demo/ios/README.md) for full details.
+
 ---
 
 ## Build
@@ -154,6 +170,8 @@ See [`demo/android/README.md`](demo/android/README.md) for full details.
 ./build.sh wasm      # → build/wasm/mk_parser.{js,wasm}
 ./build.sh android   # → build/android/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/
 ./build.sh ios       # → build/ios/MkParser.xcframework
+./build.sh bench     # → build native + run multi-scenario throughput benchmark
+./build.sh npm-pack  # → build WASM + npm pack --dry-run (validate package)
 ./build.sh all       # everything above
 ```
 

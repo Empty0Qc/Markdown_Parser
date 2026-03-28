@@ -6,6 +6,8 @@
 LLM token 流  →  mk_feed()  →  on_node_open / on_text / on_node_close
 ```
 
+> **第一次接触本项目？** 阅读 [项目全览](docs/OVERVIEW.md)，系统了解架构设计、各模块职责、对外能力与核心优势。
+
 ---
 
 ## 为什么选 mk-parser？
