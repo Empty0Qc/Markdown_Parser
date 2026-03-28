@@ -693,8 +693,8 @@ static int process_line(MkBlockParser *bp, const char *line, size_t len) {
                                      cur->text.data, cur->text.len);
             textbuf_clear(&cur->text);
 
+            /* pop_frame (called by pop_to) emits close internally */
             pop_to(bp, bp->top - 1);
-            emit_close(bp, &h->base);
             return 0;
         }
     }

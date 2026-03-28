@@ -36,6 +36,43 @@ enum MkBlockParser {
     }
 }
 
+// ── [F03] Incremental streaming parser ────────────────────────────────────────
+//
+// Holds a long-lived MkParser + BlockBuilder pair so each new token is fed
+// only once instead of re-parsing the entire accumulated document.
+// This turns the streaming render pass from O(n²) into O(n).
+
+final class MkStreamingParser {
+    private let builder = BlockBuilder()
+    private var parser: MkParser?
+
+    init() {
+        parser = try? MkParser(
+            onNodeOpen:  { [weak self] type, info in self?.builder.onOpen(type: type, info: info) },
+            onNodeClose: { [weak self] type, _    in self?.builder.onClose(type: type) },
+            onText:      { [weak self] text       in self?.builder.onText(text) },
+            onModify:    { _, _ in }
+        )
+    }
+
+    /// Feed the next chunk and return the current block list (marked streaming).
+    @discardableResult
+    func feed(_ chunk: String) -> [MkBlock] {
+        try? parser?.feed(chunk)
+        return builder.build().markLastStreaming()
+    }
+
+    /// Signal end-of-stream and return the final block list.
+    func finish() -> [MkBlock] {
+        try? parser?.finish()
+        parser?.destroy()
+        parser = nil
+        return builder.build()
+    }
+
+    deinit { parser?.destroy() }
+}
+
 // ── Internal state machine ────────────────────────────────────────────────────
 
 private class BlockBuilder {

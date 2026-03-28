@@ -15,9 +15,9 @@ LLM token 流  →  mk_feed()  →  on_node_open / on_text / on_node_close
 
 ---
 
-## 当前状态（截至 2026-03）
+## 当前状态（截至 2026-03-29）
 
-所有里程碑均已完成（M1–M12 + iOS Demo）：
+所有里程碑均已完成（M1–M12 + iOS Demo），持续修 bug + 提升 spec 通过率：
 
 | 层 | 状态 |
 |---|---|
@@ -31,6 +31,19 @@ LLM token 流  →  mk_feed()  →  on_node_open / on_text / on_node_close
 | C 单元测试 67 个（M11） | ✅ 完成 |
 | Android View 渲染器（M12）| ✅ 完成 |
 | iOS SwiftUI Demo | ✅ 完成 |
+| Bug fixes F01–F20 | ✅ 全部修复 |
+| CommonMark 0.31 spec 通过率 | **40.5%**（264/652，初始 31.4%） |
+
+### 最近改动（本会话 2026-03-29）
+
+| 模块 | 改动 | 详情 |
+|---|---|---|
+| `src/ast.c` | 新增 36 个节点属性 getter | `mk_node_heading_level` 等，类型安全，NULL 防御 |
+| `src/block.c` | 修复 F16：setext 标题双 close | 删除 `pop_to` 后多余的 `emit_close` |
+| `src/inline_parser.c` | 修复 F19：pos+new_pos 双加 | 标准构造返回绝对位置，插件返回相对偏移，分开处理 |
+| `src/inline_parser.c` | 修复 F20：Emphasis punctuation 规则 | 实现 CommonMark §6.2 left/right-flanking 标点条件 |
+| `tests/spec/mk_html.c` | 修复 F17/F18：on_modify + table | setext → `<h{n}>`，table → `<table>`，TABLE_HEAD 不再双写 `<tr>` |
+| `demo/android` + `demo/ios` | 修复 F03：O(n²) 全文重解析 | 新增 `MkStreamingParser`，每 token 只 feed 新增部分 |
 
 ---
 
@@ -92,6 +105,7 @@ mk_p/
 | `android-assistant` D3 | `TravelCityView` + `HistoryOrderListDialog` 仍依赖旧 markdown 库，待这两个视图迁移后再删旧依赖 |
 | WASM 绑定单实例 | `g_ctx` 为全局静态变量，实际只支持一个 parser 实例，如需多实例需重构为 handle map |
 | `memmem` 在 block.c | HTML block 结束判定用了非 C11 标准的 `memmem`，非 GNU 环境需替换为手动扫描 |
+| Spec 通过率 40.5% | 剩余失败：Links(64)、Emphasis(61)、List items(43)、Block quotes(23)、Link reference defs(22)；主要缺失：链接引用定义、GFM 列表规则细节、blockquote lazy continuation |
 
 ---
 

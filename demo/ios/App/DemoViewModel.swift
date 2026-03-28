@@ -39,9 +39,11 @@ final class DemoViewModel: ObservableObject {
     @Published var llmConfig:      LlmConfig    = LlmConfig()
     @Published var llmPrompt:      String       = "Write a short Markdown essay about the Swift language."
 
-    private var eventCounter = 0
-    private var streamTimer:  Timer?
-    private var llmStream:    LlmStream?
+    private var eventCounter    = 0
+    private var streamTimer:    Timer?
+    private var llmStream:      LlmStream?
+    // [F03] Long-lived incremental block parser (avoids O(n²) re-parse per tick)
+    private var streamingParser: MkStreamingParser?
 
     init() { parseAll() }
 
@@ -93,14 +95,18 @@ final class DemoViewModel: ObservableObject {
         streamTotal = md.utf8.count
 
         var idx = 0
-        let parser = buildEventParser()
+        let eventParser = buildEventParser()
+        // [F03] Single incremental block parser for the whole stream
+        let blockParser = MkStreamingParser()
+        streamingParser = blockParser
 
         streamTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] t in
             guard let self else { t.invalidate(); return }
             guard idx < chunkStrings.count else {
-                try? parser.finish()
-                parser.destroy()
-                let finalBlocks = MkBlockParser.parse(md)
+                try? eventParser.finish()
+                eventParser.destroy()
+                let finalBlocks = blockParser.finish()
+                self.streamingParser = nil
                 DispatchQueue.main.async {
                     self.renderedBlocks = finalBlocks
                     self.isStreaming = false
@@ -109,16 +115,17 @@ final class DemoViewModel: ObservableObject {
                 return
             }
             let chunk = chunkStrings[idx]; idx += 1
-            try? parser.feed(chunk)
+            try? eventParser.feed(chunk)
             let takenBytes = chunkStrings[..<idx].reduce(0) { $0 + $1.utf8.count }
-            let taken = String(md.utf8.prefix(takenBytes)).flatMap { $0 } ?? md
             self.streamChunk = takenBytes
-            self.renderedBlocks = MkBlockParser.parse(taken, isStreaming: true)
+            // Feed only the NEW chunk — O(chunk_size) instead of O(accumulated)
+            self.renderedBlocks = blockParser.feed(chunk)
         }
     }
 
     func stopStream() {
         streamTimer?.invalidate(); streamTimer = nil
+        streamingParser = nil
         isStreaming = false
     }
 
@@ -134,29 +141,35 @@ final class DemoViewModel: ObservableObject {
         markdown    = ""
         renderedBlocks = []
 
-        let parser = buildEventParser()
+        let eventParser = buildEventParser()
+        // [F03] Long-lived block parser — only feeds new tokens, not full document
+        let blockParser = MkStreamingParser()
+        streamingParser = blockParser
 
         llmStream = provider.stream(
             prompt: llmPrompt,
             onToken: { [weak self] token in
                 guard let self else { return }
                 accumulated += token
-                try? parser.feed(token)
-                self.markdown      = accumulated
-                self.renderedBlocks = MkBlockParser.parse(accumulated, isStreaming: true)
+                try? eventParser.feed(token)
+                self.markdown = accumulated
+                // Feed only the new token — O(token_len) per tick
+                self.renderedBlocks = blockParser.feed(token)
             },
             onDone: { [weak self] in
                 guard let self else { return }
-                try? parser.finish()
-                parser.destroy()
-                self.renderedBlocks = MkBlockParser.parse(accumulated)
+                try? eventParser.finish()
+                eventParser.destroy()
+                self.renderedBlocks = blockParser.finish()
+                self.streamingParser = nil
                 self.isStreaming = false
             },
             onError: { [weak self] error in
                 guard let self else { return }
                 self.errorMessage = error.localizedDescription
                 self.isStreaming  = false
-                parser.destroy()
+                self.streamingParser = nil
+                eventParser.destroy()
             }
         )
     }

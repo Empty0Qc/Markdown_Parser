@@ -8,6 +8,7 @@ import com.mkparser.NodeType
 import com.mkparser.demo.llm.LlmConfig
 import com.mkparser.demo.ui.render.MkBlock
 import com.mkparser.demo.ui.render.MkBlockParser
+import com.mkparser.demo.ui.render.MkStreamingParser
 import com.mkparser.demo.llm.LlmProvider
 import com.mkparser.demo.llm.MockProvider
 import com.mkparser.demo.llm.OpenAiProvider
@@ -56,6 +57,8 @@ class MkDemoViewModel : ViewModel() {
 
     private var streamJob: Job? = null
     private var eventCounter   = 0
+    // [F03] Long-lived incremental block parser (avoids O(n²) re-parse per tick)
+    private var streamingParser: MkStreamingParser? = null
 
     init { parseAll() }
 
@@ -87,18 +90,25 @@ class MkDemoViewModel : ViewModel() {
 
         _uiState.update { it.copy(isStreaming = true, streamChunk = 0, streamTotal = md.length) }
 
+        // [F03] Single incremental block parser for the whole stream
+        val blockParser = MkStreamingParser()
+        streamingParser = blockParser
+
         streamJob = viewModelScope.launch {
-            val parser = buildParser()
+            val eventParser = buildParser()
             val chunkSize = 7
-            md.chunked(chunkSize).forEachIndexed { i, chunk ->
-                parser.feed(chunk)
-                val taken = md.take((i + 1) * chunkSize)
-                _uiState.update { it.copy(streamChunk = (i + 1) * chunkSize) }
-                _renderedBlocks.value = MkBlockParser.parse(taken, isStreaming = true)
+            var bytesSent = 0
+            md.chunked(chunkSize).forEach { chunk ->
+                eventParser.feed(chunk)
+                bytesSent += chunk.length
+                _uiState.update { it.copy(streamChunk = bytesSent) }
+                // Feed only the NEW chunk — O(chunk_size) instead of O(accumulated)
+                _renderedBlocks.value = blockParser.feed(chunk)
                 delay(40L)
             }
-            parser.finish().destroy()
-            _renderedBlocks.value = MkBlockParser.parse(md)
+            eventParser.finish().destroy()
+            _renderedBlocks.value = blockParser.finish()
+            streamingParser = null
             _uiState.update { it.copy(isStreaming = false) }
         }
         streamJob?.invokeOnCompletion { _uiState.update { it.copy(isStreaming = false) } }
@@ -106,6 +116,7 @@ class MkDemoViewModel : ViewModel() {
 
     fun stopStream() {
         streamJob?.cancel()
+        streamingParser = null
         _uiState.update { it.copy(isStreaming = false) }
     }
 
@@ -132,20 +143,28 @@ class MkDemoViewModel : ViewModel() {
         _uiState.update { it.copy(isStreaming = true, markdown = "") }
         _renderedBlocks.value = emptyList()
 
+        // [F03] Long-lived block parser — only feeds new tokens, not full document
+        val blockParser = MkStreamingParser()
+        streamingParser = blockParser
+
         streamJob = viewModelScope.launch {
-            val parser = buildParser()
+            val eventParser = buildParser()
             provider.stream(state.llmPrompt)
                 .catch { e ->
                     _uiState.update { it.copy(errorMessage = e.message, isStreaming = false) }
+                    streamingParser = null
+                    eventParser.destroy()
                 }
                 .collect { token ->
                     accumulated += token
-                    parser.feed(token)
+                    eventParser.feed(token)
                     _uiState.update { it.copy(markdown = accumulated) }
-                    _renderedBlocks.value = MkBlockParser.parse(accumulated, isStreaming = true)
+                    // Feed only the new token — O(token_len) per tick
+                    _renderedBlocks.value = blockParser.feed(token)
                 }
-            parser.finish().destroy()
-            _renderedBlocks.value = MkBlockParser.parse(accumulated)
+            eventParser.finish().destroy()
+            _renderedBlocks.value = blockParser.finish()
+            streamingParser = null
             _uiState.update { it.copy(isStreaming = false) }
         }
         streamJob?.invokeOnCompletion { _uiState.update { it.copy(isStreaming = false) } }

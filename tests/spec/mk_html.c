@@ -146,12 +146,15 @@ static void on_open(void *ud, MkNode *node) {
     }
 
     case MK_NODE_PARAGRAPH:
-        /* In tight list items, suppress <p> */
+        /* In tight list items, suppress <p>.
+         * Otherwise, record the buffer position BEFORE writing <p> so
+         * on_modify can truncate back to here for setext/table promotion. */
         if (s->in_tight > 0 && find_ctx(s, CTX_LIST_ITEM) >= 0) {
-            push_ctx(s, CTX_PARAGRAPH, 1); /* 1 = suppressed */
+            push_ctx(s, CTX_PARAGRAPH, -1); /* -1 = suppressed */
         } else {
+            int saved = (int)b->len;   /* position before <p> */
             buf_str(b, "<p>");
-            push_ctx(s, CTX_PARAGRAPH, 0);
+            push_ctx(s, CTX_PARAGRAPH, saved);
         }
         break;
 
@@ -228,7 +231,7 @@ static void on_open(void *ud, MkNode *node) {
         break;
 
     case MK_NODE_TABLE_HEAD:
-        buf_str(b, "<thead>\n<tr>\n");
+        buf_str(b, "<thead>\n");   /* <tr> comes from on_open(TABLE_ROW) */
         push_ctx(s, CTX_TABLE_HEAD, 0);
         break;
 
@@ -358,9 +361,9 @@ static void on_close(void *ud, MkNode *node) {
     }
 
     case MK_NODE_PARAGRAPH: {
-        int suppressed = top_data(s);
+        int data = top_data(s);   /* -1 = suppressed, >=0 = buf position before <p> */
         pop_ctx(s);
-        if (!suppressed) buf_str(b, "</p>\n");
+        if (data >= 0) buf_str(b, "</p>\n");
         break;
     }
 
@@ -396,12 +399,12 @@ static void on_close(void *ud, MkNode *node) {
         break;
 
     case MK_NODE_TABLE:
-        buf_str(b, "</table>\n");
+        buf_str(b, "</tbody>\n</table>\n");
         break;
 
     case MK_NODE_TABLE_HEAD:
         pop_ctx(s);
-        buf_str(b, "</tr>\n</thead>\n<tbody>\n");
+        buf_str(b, "</thead>\n<tbody>\n");   /* </tr> comes from on_close(TABLE_ROW) */
         break;
 
     case MK_NODE_TABLE_ROW:
@@ -539,8 +542,33 @@ static void on_text(void *ud, MkNode *node, const char *text, size_t len) {
 /* ── modify callback ──────────────────────────────────────────────────────── */
 
 static void on_modify(void *ud, MkNode *node) {
-    /* Heading/Table promotions: nothing extra to do in HTML mode */
-    (void)ud; (void)node;
+    MkHtmlState *s = (MkHtmlState *)ud;
+    Buf *b = &s->buf;
+
+    /* Setext heading promotion: paragraph → heading.
+     * Table promotion: paragraph → table.
+     * In both cases on_open(PARAGRAPH) fired earlier; we must undo its <p>. */
+    if (top_ctx(s) != CTX_PARAGRAPH) return;
+
+    int saved_pos = top_data(s);   /* buf position before <p> was written */
+    pop_ctx(s);
+
+    /* Truncate buffer back to before <p> (no-op if suppressed, saved_pos<0) */
+    if (saved_pos >= 0) {
+        b->len = (size_t)saved_pos;
+        if (b->data) b->data[b->len] = '\0';
+    }
+
+    if (node->type == MK_NODE_HEADING) {
+        int level = mk_node_heading_level(node);
+        char tag[8]; snprintf(tag, sizeof(tag), "<h%d>", level);
+        buf_str(b, tag);
+        push_ctx(s, CTX_HEADING, level);
+    } else if (node->type == MK_NODE_TABLE) {
+        /* on_open(TABLE) is never fired for promoted tables; emit it here */
+        buf_str(b, "<table>\n");
+        /* TABLE_HEAD/TABLE_ROW/TABLE_CELL events manage the rest */
+    }
 }
 
 /* ── public API ──────────────────────────────────────────────────────────────── */

@@ -423,18 +423,23 @@ static size_t try_emphasis(const IP *ip, size_t pos, size_t end, MkNode *parent)
     while (pos + (size_t)run_len < end && s[pos + (size_t)run_len] == c)
         run_len++;
 
-    /* For '_': must not be surrounded by word chars (word-boundary check) */
-    if (c == '_') {
-        /* opener must not be preceded by alphanumeric */
-        if (run_start > 0 && isalnum((unsigned char)s[run_start - 1])) return 0;
-        /* opener must not be followed by whitespace */
-        if (run_start + (size_t)run_len < end
-            && isspace((unsigned char)s[run_start + (size_t)run_len])) return 0;
-    }
+    size_t run_end = run_start + (size_t)run_len;
 
-    /* Opener must not be followed by whitespace */
-    if (run_start + (size_t)run_len < end
-        && isspace((unsigned char)s[run_start + (size_t)run_len])) return 0;
+    /* ── Left-flanking (opener) check ──────────────────────────────────────
+     * A left-flanking delimiter run must:
+     *   (1) not be followed by Unicode whitespace
+     *   (2) either: not followed by Unicode punctuation
+     *        OR:    followed by punctuation AND preceded by space/punctuation
+     * ── For '_': additionally must not be preceded by alphanumeric ──────── */
+    if (run_end < end && isspace((unsigned char)s[run_end])) return 0;
+    if (run_end < end && ispunct((unsigned char)s[run_end])) {
+        /* followed by punct — ok only if preceded by space or punct */
+        int pre_ok = (run_start == 0
+                      || isspace((unsigned char)s[run_start - 1])
+                      || ispunct((unsigned char)s[run_start - 1]));
+        if (!pre_ok) return 0;
+    }
+    if (c == '_' && run_start > 0 && isalnum((unsigned char)s[run_start - 1])) return 0;
 
     int strong  = (run_len >= 2);
     int consume = strong ? 2 : 1;
@@ -447,9 +452,18 @@ static size_t try_emphasis(const IP *ip, size_t pos, size_t end, MkNode *parent)
             int crun = 0;
             while (p + (size_t)crun < end && s[p + (size_t)crun] == c) crun++;
 
-            /* Closer must not be preceded by whitespace */
-            if (p > 0 && isspace((unsigned char)s[p - 1])) { p += (size_t)crun; continue; }
-            /* '_' closer must not be followed by alphanumeric */
+            /* ── Right-flanking (closer) check ─────────────────────────────
+             * Must not be preceded by whitespace.
+             * If preceded by punctuation, must be followed by space/punctuation.
+             * For '_': must not be followed by alphanumeric. */
+            if (p == 0 || isspace((unsigned char)s[p - 1])) { p += (size_t)crun; continue; }
+            if (ispunct((unsigned char)s[p - 1])) {
+                size_t after = p + (size_t)crun;
+                int fol_ok = (after >= end
+                              || isspace((unsigned char)s[after])
+                              || ispunct((unsigned char)s[after]));
+                if (!fol_ok) { p += (size_t)crun; continue; }
+            }
             if (c == '_' && p + (size_t)crun < end
                 && isalnum((unsigned char)s[p + (size_t)crun])) { p += (size_t)crun; continue; }
 
@@ -623,16 +637,19 @@ static size_t parse_seq(const IP *ip, size_t pos, size_t end, MkNode *parent) {
         default:   break;
         }
 
-        /* Try parser plugins if standard constructs didn't match */
-        if (new_pos == 0)
-            new_pos = mk_plugin_try_inline(ip->parser, ip->arena, ip->cbs,
-                                           ip->src + pos, end - pos, parent);
-
-        if (new_pos > 0) {
-            pos = text_start = pos + new_pos;
+        if (new_pos > pos) {
+            /* Standard construct: returned an absolute position */
+            pos = text_start = new_pos;
         } else {
-            /* No match: treat as literal character */
-            pos++;
+            /* Try plugins: they receive a relative slice, return relative offset */
+            size_t plugin_adv = mk_plugin_try_inline(ip->parser, ip->arena, ip->cbs,
+                                                     ip->src + pos, end - pos, parent);
+            if (plugin_adv > 0) {
+                pos = text_start = pos + plugin_adv;
+            } else {
+                /* No match: treat as literal character */
+                pos++;
+            }
         }
     }
 

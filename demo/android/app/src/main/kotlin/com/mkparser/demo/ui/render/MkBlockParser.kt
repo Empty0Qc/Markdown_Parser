@@ -38,6 +38,34 @@ object MkBlockParser {
     }
 }
 
+// ── [F03] Incremental streaming parser ────────────────────────────────────────
+//
+// Holds a long-lived MkParser + BlockBuilder pair so each new token is fed
+// only once instead of re-parsing the entire accumulated document.
+// This turns the streaming render pass from O(n²) into O(n).
+
+class MkStreamingParser {
+    private val builder = BlockBuilder()
+    private var parser: MkParser? = MkParser(
+        onNodeOpen  = { type, flags, attr -> builder.onOpen(type, flags, attr) },
+        onNodeClose = { type              -> builder.onClose(type) },
+        onText      = { text             -> builder.onText(text) },
+    )
+
+    /** Feed the next chunk and return the current block list (marked streaming). */
+    fun feed(chunk: String): List<MkBlock> {
+        parser?.feed(chunk)
+        return builder.build().markLastStreaming()
+    }
+
+    /** Signal end-of-stream and return the final block list. */
+    fun finish(): List<MkBlock> {
+        parser?.finish()?.destroy()
+        parser = null
+        return builder.build()
+    }
+}
+
 // ── Colours used for inline spans ────────────────────────────────────────────
 
 private val colLink   = Color(0xFF89DCEB)
