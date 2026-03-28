@@ -1001,12 +1001,19 @@ int mk_block_feed(MkBlockParser *bp, const char *data, size_t len) {
         if (c == '\r') continue;
         if (c == '\n') {
             int rc = process_line(bp, bp->line_buf, bp->line_len);
-            bp->line_len = 0;
+            bp->line_len      = 0;
+            bp->line_overflow = 0;
             bp->src_offset++;
             if (rc) return rc;
         } else {
-            if (bp->line_len < MK_BLOCK_LINE_MAX - 1)
+            if (bp->line_len < MK_BLOCK_LINE_MAX - 1) {
                 bp->line_buf[bp->line_len++] = c;
+            } else if (!bp->line_overflow) {
+                bp->line_overflow = 1;
+                if (bp->cbs.on_error)
+                    bp->cbs.on_error(bp->cbs.user_data, MK_ERR_LINE_TOO_LONG,
+                        "input line exceeds MK_BLOCK_LINE_MAX bytes; excess bytes truncated");
+            }
         }
         bp->src_offset++;
     }

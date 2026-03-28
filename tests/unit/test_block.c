@@ -223,6 +223,73 @@ static void test_document_open_close(void) {
     PASS("document_open_close");
 }
 
+/* ── [F05] on_error: line-too-long ────────────────────────────────────────── */
+
+static int g_error_code    = 0;
+static int g_error_count   = 0;
+
+static void on_err(void *ud, MkErrorCode code, const char *msg) {
+    (void)ud; (void)msg;
+    g_error_code  = (int)code;
+    g_error_count++;
+}
+
+static void test_line_too_long_fires_error(void) {
+    g_error_code  = 0;
+    g_error_count = 0;
+
+    /* Build a line that is 9000 bytes long (> MK_BLOCK_LINE_MAX = 8192) */
+    const size_t LINE = 9000;
+    char *big = malloc(LINE + 2);
+    assert(big);
+    memset(big, 'a', LINE);
+    big[LINE]     = '\n';
+    big[LINE + 1] = '\0';
+
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = {
+        .user_data    = NULL,
+        .on_error     = on_err,
+    };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, big, LINE + 1);
+    mk_finish(p);
+    mk_parser_free(p);
+    mk_arena_free(a);
+    free(big);
+
+    /* on_error must have been called exactly once with LINE_TOO_LONG */
+    assert(g_error_count == 1);
+    assert(g_error_code  == (int)MK_ERR_LINE_TOO_LONG);
+    PASS("line_too_long_fires_error");
+}
+
+static void test_line_too_long_fires_once_per_line(void) {
+    g_error_count = 0;
+
+    /* Two successive overlong lines — each should fire the error once */
+    const size_t LINE = 9000;
+    char *big = malloc((LINE + 1) * 2 + 1);
+    assert(big);
+    memset(big, 'b', LINE);
+    big[LINE] = '\n';
+    memset(big + LINE + 1, 'c', LINE);
+    big[LINE + 1 + LINE] = '\n';
+    big[LINE + 1 + LINE + 1] = '\0';
+
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = { .user_data = NULL, .on_error = on_err };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, big, (LINE + 1) * 2);
+    mk_finish(p);
+    mk_parser_free(p);
+    mk_arena_free(a);
+    free(big);
+
+    assert(g_error_count == 2);
+    PASS("line_too_long_fires_once_per_line");
+}
+
 /* ── main ─────────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -242,6 +309,8 @@ int main(void) {
     test_multiple_paragraphs();
     test_empty_input();
     test_document_open_close();
+    test_line_too_long_fires_error();
+    test_line_too_long_fires_once_per_line();
     printf("All block tests passed.\n\n");
     return 0;
 }

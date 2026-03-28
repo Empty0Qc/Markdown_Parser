@@ -42,14 +42,19 @@ struct MkParser {
     const MkTransformPlugin *transform_plugins[16];
     int                      n_parser_plugins;
     int                      n_transform_plugins;
+
+    /* Bitmap: trigger_map[c] != 0 iff any registered plugin triggers on c.
+     * Built incrementally in mk_register_parser_plugin; used in the hot path
+     * instead of iterating all plugins and calling strchr per character. */
+    uint8_t                  trigger_map[256];
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Delta queue helpers
  * ════════════════════════════════════════════════════════════════════════════ */
 
-static MkDelta *delta_alloc(MkDeltaType type, MkNode *node) {
-    MkDelta *d = malloc(sizeof(MkDelta));
+static MkDelta *delta_alloc(MkParser *p, MkDeltaType type, MkNode *node) {
+    MkDelta *d = mk_arena_stable_alloc(p->arena, sizeof(MkDelta));
     if (!d) return NULL;
     d->type     = type;
     d->node     = node;
@@ -72,7 +77,7 @@ static void dq_push(MkParser *p, MkDelta *d) {
 
 static void internal_open(void *ud, MkNode *n) {
     MkParser *p = (MkParser *)ud;
-    dq_push(p, delta_alloc(MK_DELTA_NODE_OPEN, n));
+    dq_push(p, delta_alloc(p, MK_DELTA_NODE_OPEN, n));
     if (p->user_cbs.on_node_open)
         p->user_cbs.on_node_open(p->user_cbs.user_data, n);
 }
@@ -81,7 +86,7 @@ static void internal_close(void *ud, MkNode *n) {
     MkParser *p = (MkParser *)ud;
     /* Transform plugins see the fully-built node before it's announced */
     mk_plugin_node_complete(p, n, p->arena);
-    dq_push(p, delta_alloc(MK_DELTA_NODE_CLOSE, n));
+    dq_push(p, delta_alloc(p, MK_DELTA_NODE_CLOSE, n));
     if (p->user_cbs.on_node_close)
         p->user_cbs.on_node_close(p->user_cbs.user_data, n);
 }
@@ -90,7 +95,7 @@ static void internal_text(void *ud, MkNode *n, const char *text, size_t len) {
     MkParser   *p    = (MkParser *)ud;
     /* Copy into stable arena — text may point into a transient line buffer */
     const char *copy = mk_arena_strdup_stable(p->arena, text, len);
-    MkDelta    *d    = delta_alloc(MK_DELTA_TEXT, n);
+    MkDelta    *d    = delta_alloc(p, MK_DELTA_TEXT, n);
     if (d) {
         d->text     = copy;
         d->text_len = len;
@@ -102,9 +107,15 @@ static void internal_text(void *ud, MkNode *n, const char *text, size_t len) {
 
 static void internal_modify(void *ud, MkNode *n) {
     MkParser *p = (MkParser *)ud;
-    dq_push(p, delta_alloc(MK_DELTA_NODE_MODIFY, n));
+    dq_push(p, delta_alloc(p, MK_DELTA_NODE_MODIFY, n));
     if (p->user_cbs.on_node_modify)
         p->user_cbs.on_node_modify(p->user_cbs.user_data, n);
+}
+
+static void internal_error(void *ud, MkErrorCode code, const char *msg) {
+    MkParser *p = (MkParser *)ud;
+    if (p->user_cbs.on_error)
+        p->user_cbs.on_error(p->user_cbs.user_data, code, msg);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -128,6 +139,7 @@ MkParser *mk_parser_new(MkArena *arena, const MkCallbacks *callbacks) {
         .on_node_close  = internal_close,
         .on_text        = internal_text,
         .on_node_modify = internal_modify,
+        .on_error       = internal_error,
     };
     mk_block_init(&p->bp, arena, &icbs);
 
@@ -140,13 +152,10 @@ void mk_parser_free(MkParser *p) {
      * already called (finished flag prevents double close). */
     if (!p->finished) mk_finish(p);
     mk_block_cleanup(&p->bp);
-    /* Drain and free any unconsumed deltas */
-    MkDelta *d = p->dq_head;
-    while (d) {
-        MkDelta *next = d->next;
-        free(d);
-        d = next;
-    }
+    /* Delta nodes are arena-allocated — they are freed when the arena is freed.
+     * Just clear the queue pointers so the parser is in a clean state. */
+    p->dq_head = NULL;
+    p->dq_tail = NULL;
     free(p);
 }
 
@@ -180,8 +189,17 @@ MkDelta *mk_pull_delta(MkParser *p) {
 }
 
 void mk_delta_free(MkDelta *d) {
-    /* delta->text points into the stable arena — not freed here */
-    free(d);
+    /* Delta nodes are arena-allocated; both the node and its text live in
+     * the stable arena and are freed when the arena is freed.
+     * This function is kept for API compatibility but is now a no-op. */
+    (void)d;
+}
+
+/* Discard all pending (unconsumed) deltas without freeing arena memory. */
+void mk_drain_deltas(MkParser *p) {
+    if (!p) return;
+    p->dq_head = NULL;
+    p->dq_tail = NULL;
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -201,6 +219,11 @@ int mk_register_parser_plugin(MkParser *p, const MkParserPlugin *plugin) {
     if (!p || !plugin) return -1;
     if (p->n_parser_plugins >= 16) return -1;
     p->parser_plugins[p->n_parser_plugins++] = plugin;
+    /* Update trigger bitmap so the hot path avoids per-plugin strchr */
+    if (plugin->inline_triggers) {
+        for (const char *t = plugin->inline_triggers; *t; t++)
+            p->trigger_map[(unsigned char)*t] = 1;
+    }
     return 0;
 }
 
@@ -214,6 +237,11 @@ int mk_register_transform_plugin(MkParser *p, const MkTransformPlugin *plugin) {
 /* ════════════════════════════════════════════════════════════════════════════
  * Plugin accessor shims (called by plugin.c via extern declarations)
  * ════════════════════════════════════════════════════════════════════════════ */
+
+/* Fast trigger lookup used by plugin.c instead of iterating all plugins */
+int mk_parser_trigger_map_test(MkParser *p, unsigned char c) {
+    return p ? (int)p->trigger_map[c] : 0;
+}
 
 const MkParserPlugin *mk_parser_plugin_at(MkParser *p, int i) {
     if (!p || i < 0 || i >= p->n_parser_plugins) return NULL;

@@ -593,6 +593,21 @@ static size_t parse_seq(const IP *ip, size_t pos, size_t end, MkNode *parent) {
             append_text(ip, parent, ip->src + text_start, pos - text_start);
         text_start = pos;
 
+        /* [F07] Delimiter-run fast-skip: for * and _ runs, if there is no
+         * subsequent c character in the remaining span, no emphasis can ever
+         * match.  Emit the entire run as literal text in O(1) instead of
+         * retrying at each position in the run (which would be O(run_len²)).
+         * This turns the worst-case adversarial run from O(N²) to O(N). */
+        if (c == '*' || c == '_') {
+            size_t rend = pos + 1;
+            while (rend < end && ip->src[rend] == c) rend++;
+            if (!memchr(ip->src + rend, (unsigned char)c, end - rend)) {
+                append_text(ip, parent, ip->src + pos, rend - pos);
+                pos = text_start = rend;
+                continue;
+            }
+        }
+
         size_t new_pos = 0;
 
         switch (c) {
@@ -629,6 +644,42 @@ static size_t parse_seq(const IP *ip, size_t pos, size_t end, MkNode *parent) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+ * Inline AST walker — fires push callbacks in document order.
+ *
+ * Used by the two-pass mk_inline_parse: phase 1 builds the AST silently
+ * (cbs=NULL), phase 2 walks and fires events.  This guarantees correct
+ * event ordering even when emphasis nodes are created around already-parsed
+ * children.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+static void inline_walk(const MkCallbacks *cbs, MkNode *n) {
+    if (!n || !cbs) return;
+
+    if (cbs->on_node_open) cbs->on_node_open(cbs->user_data, n);
+
+    switch (n->type) {
+    case MK_NODE_TEXT: {
+        MkTextNode *tn = (MkTextNode *)n;
+        if (cbs->on_text && tn->text)
+            cbs->on_text(cbs->user_data, n, tn->text, tn->text_len);
+        break;
+    }
+    case MK_NODE_INLINE_CODE: {
+        MkInlineCodeNode *ic = (MkInlineCodeNode *)n;
+        if (cbs->on_text && ic->text)
+            cbs->on_text(cbs->user_data, n, ic->text, ic->text_len);
+        break;
+    }
+    default:
+        for (MkNode *child = n->first_child; child; child = child->next_sibling)
+            inline_walk(cbs, child);
+        break;
+    }
+
+    if (cbs->on_node_close) cbs->on_node_close(cbs->user_data, n);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
  * Public entry point
  * ════════════════════════════════════════════════════════════════════════════ */
 
@@ -641,6 +692,16 @@ void mk_inline_parse(MkArena           *arena,
 {
     if (!text || !len || !parent) return;
 
-    IP ip = { arena, cbs, text, len, parser };
+    /* Phase 1: build the inline AST silently (no callbacks).
+     * Using cbs=NULL makes iemit_open/close/text all no-ops.
+     * This ensures correct event ordering when emphasis nodes wrap
+     * content that was parsed before the closing delimiter was found. */
+    IP ip = { arena, NULL, text, len, parser };
     parse_seq(&ip, 0, len, parent);
+
+    /* Phase 2: walk the built subtree and fire events in document order. */
+    if (cbs) {
+        for (MkNode *child = parent->first_child; child; child = child->next_sibling)
+            inline_walk(cbs, child);
+    }
 }

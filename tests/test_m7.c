@@ -221,12 +221,40 @@ static void test_combined(void) {
     printf("  test_combined: OK\n");
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+ * Test 5 — [F09] Trigger bitmap: math plugin triggers on '$', not on 'a'
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/* We expose the bitmap lookup via a small test shim declared here.
+ * mk_plugin_is_inline_trigger is the public-facing function in plugin.c. */
+int mk_plugin_is_inline_trigger(MkParser *parser, char c);
+
+static void test_trigger_bitmap(void) {
+    MkArena *arena = mk_arena_new();
+    MkParser *p = mk_parser_new(arena, NULL);
+    assert(p);
+    mk_register_parser_plugin(p, &math_plugin);  /* inline_triggers = "$" */
+
+    /* '$' must be flagged */
+    assert(mk_plugin_is_inline_trigger(p, '$') != 0);
+    /* ordinary letters must NOT be flagged */
+    assert(mk_plugin_is_inline_trigger(p, 'a') == 0);
+    assert(mk_plugin_is_inline_trigger(p, 'z') == 0);
+    /* alert_plugin is NOT registered — '!' must not be flagged */
+    assert(mk_plugin_is_inline_trigger(p, '!') == 0);
+
+    mk_parser_free(p);
+    mk_arena_free(arena);
+    printf("  test_trigger_bitmap: OK\n");
+}
+
 int main(void) {
     printf("M7 Plugin system tests\n");
-    printf("--- test_math_inline ---\n");  test_math_inline();
-    printf("--- test_alert_block ---\n");  test_alert_block();
-    printf("--- test_transform ---\n");    test_transform();
-    printf("--- test_combined ---\n");     test_combined();
+    printf("--- test_math_inline ---\n");    test_math_inline();
+    printf("--- test_alert_block ---\n");    test_alert_block();
+    printf("--- test_transform ---\n");      test_transform();
+    printf("--- test_combined ---\n");       test_combined();
+    printf("--- test_trigger_bitmap ---\n"); test_trigger_bitmap();
     printf("\nAll M7 tests passed.\n");
     return 0;
 }

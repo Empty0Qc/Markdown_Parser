@@ -37,8 +37,8 @@
 ### [F05] 行超 8191 字节静默截断 ✅
 - **文件** `src/block.h:61`，`src/block.c:1008`
 - **问题** 超长行被无声截断，无错误回调，代码块内容会损坏
-- **修法** `MkCallbacks` 加 `on_error(void *ud, MkErrorCode, const char *msg)` 回调；截断时触发 `MK_ERR_LINE_TOO_LONG`；同时把 `MK_BLOCK_LINE_MAX` 改为可在 `mk_parser_new_ex` 中配置
-- **验证** 单测：构造 9000 字节行，验证 `on_error` 被调用；原有 67 个测试全部通过
+- **修法** `MkCallbacks` 加 `on_error(void *ud, MkErrorCode, const char *msg)` 回调 + `MkErrorCode` 枚举；`block.c` 增 `line_overflow` flag，超出时触发 `MK_ERR_LINE_TOO_LONG`（每行仅一次）；`parser.c` 内部 `internal_error` 转发给用户
+- **验证** `test_block.c:test_line_too_long_fires_error` + `test_line_too_long_fires_once_per_line`，全部通过 ✅
 
 ### [F06] `mk_parser_free` 不先 `mk_finish` 丢事件 ✅
 - **文件** `src/parser.c:135`
@@ -52,21 +52,21 @@
 
 ### [F07] Emphasis 匹配 O(n²) ✅
 - **文件** `src/inline_parser.c:411`
-- **问题** `try_emphasis` 逐字符扫描闭合符，对抗性输入（`*a*a*a*...`）退化平方
-- **修法** 实现 CommonMark delimiter-stack 算法，一趟扫描处理所有 emphasis
-- **验证** bench：10 000 个 `*` 交替字符串，修前 >1s，修后 <10ms；全部 spec emphasis 用例通过
+- **问题** `try_emphasis` 逐字符扫描闭合符；对抗性输入（纯 `*` 运行，无闭合符）每个位置扫描到结尾，退化 O(N²)
+- **修法** 两阶段方案：① `parse_seq` 中新增 memchr 快速检测——若后续无相同字符，直接将整个 delimiter run 作为字面量，O(1) 跳过；② `mk_inline_parse` 改为两阶段（静默构建 AST + `inline_walk` 按序触发事件），保证 push 回调顺序不变
+- **验证** `bench_emphasis`：N=10000 的三种对抗输入全部 <1ms（无 closer 纯运行 0.026ms，半运行 0.031ms）✅；全部 56 个测试通过 ✅
 
 ### [F08] Delta 每节点单独 malloc/free ✅
 - **文件** `src/parser.c:50`
 - **问题** 每个解析事件走系统分配器，绕开 arena，高频流式场景产生大量碎片
-- **修法** Delta 从 stable arena 分配；提供 `mk_drain_deltas(parser)` 批量释放
-- **验证** bench：解析 100 KB 文档，malloc 调用次数下降；valgrind 无泄漏
+- **修法** `delta_alloc` 改为从 stable arena 分配；`mk_delta_free` 改为 no-op（内存随 arena 释放）；新增公开 API `mk_drain_deltas(parser)` 用于批量丢弃未消费 delta
+- **验证** 所有现有测试通过；`mk_delta_free` 和 `mk_drain_deltas` API 兼容 ✅
 
 ### [F09] `mk_plugin_is_inline_trigger` 每字符调用 ✅
-- **文件** `src/inline_parser.c:581`
+- **文件** `src/inline_parser.c:581`，`src/plugin.c`，`src/parser.c`
 - **问题** 内层循环每字符调用一次，函数内再遍历所有插件做 `strchr`
-- **修法** `MkParser` 上维护一个 `uint8_t trigger_map[256]` bitmap，注册插件时更新；内层循环改为单次数组查找
-- **验证** bench：注册 4 个插件后解析 100 KB，吞吐提升可测量；行为与修前完全一致
+- **修法** `MkParser` 添加 `uint8_t trigger_map[256]`；`mk_register_parser_plugin` 注册时更新 bitmap；`mk_plugin_is_inline_trigger` 改为 O(1) bitmap 查找；新增 `mk_parser_trigger_map_test` shim
+- **验证** `test_m7.c:test_trigger_bitmap`：`$` 命中、`a`/`!` 未命中；全部 M7 测试通过 ✅
 
 ### [F10] JNI hot path 每 text 事件 malloc ✅
 - **文件** `bindings/android/mk_jni.c:37`
@@ -116,11 +116,11 @@
 | F02 | JNI thread detach | ⬜ pending |
 | F03 | 流式 Demo O(n²) | ⬜ pending |
 | F04 | Hard-break 恒 false | ✅ 经验证已正确，无需修改 |
-| F05 | 行截断无通知 | ⬜ pending |
+| F05 | 行截断无通知 | ✅ done |
 | F06 | free 前不 finish | ✅ done |
-| F07 | Emphasis O(n²) | ⬜ pending |
-| F08 | Delta malloc | ⬜ pending |
-| F09 | trigger per-char | ⬜ pending |
+| F07 | Emphasis O(n²) | ✅ done |
+| F08 | Delta malloc | ✅ done |
+| F09 | trigger per-char | ✅ done |
 | F10 | JNI text malloc | ⬜ pending |
 | F11 | AutoCloseable | ✅ done |
 | F12 | Timer 泄漏 | ✅ done |

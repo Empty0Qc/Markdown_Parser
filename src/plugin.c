@@ -1,32 +1,25 @@
 /* plugin.c — Plugin system implementation (M7) */
 
 #include "plugin.h"
-#include <string.h>
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Forward: access parser internals
  * (MkParser is defined in parser.c; use the accessor shim declared below)
  * ════════════════════════════════════════════════════════════════════════════ */
 
-extern const MkParserPlugin    *mk_parser_plugin_at   (MkParser *p, int i);
-extern const MkTransformPlugin *mk_transform_plugin_at(MkParser *p, int i);
-extern int                      mk_parser_plugin_count   (MkParser *p);
-extern int                      mk_transform_plugin_count(MkParser *p);
+extern const MkParserPlugin    *mk_parser_plugin_at        (MkParser *p, int i);
+extern const MkTransformPlugin *mk_transform_plugin_at     (MkParser *p, int i);
+extern int                      mk_parser_plugin_count     (MkParser *p);
+extern int                      mk_transform_plugin_count  (MkParser *p);
+extern int                      mk_parser_trigger_map_test (MkParser *p, unsigned char c);
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Inline trigger check
  * ════════════════════════════════════════════════════════════════════════════ */
 
 int mk_plugin_is_inline_trigger(MkParser *parser, char c) {
-    if (!parser) return 0;
-    int n = mk_parser_plugin_count(parser);
-    for (int i = 0; i < n; i++) {
-        const MkParserPlugin *pl = mk_parser_plugin_at(parser, i);
-        if (pl && pl->inline_triggers && pl->try_inline) {
-            if (strchr(pl->inline_triggers, c)) return 1;
-        }
-    }
-    return 0;
+    /* O(1) bitmap lookup — populated when plugins are registered */
+    return mk_parser_trigger_map_test(parser, (unsigned char)c);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

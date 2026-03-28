@@ -126,6 +126,12 @@ struct MkNode {
 typedef void *(*MkAllocFn)(void *ctx, size_t size);
 typedef void  (*MkFreeFn) (void *ctx, void *ptr);
 
+/* ── Error codes ──────────────────────────────────────────────────────────── */
+
+typedef enum MkErrorCode {
+    MK_ERR_LINE_TOO_LONG = 1,  /* input line exceeded MK_BLOCK_LINE_MAX bytes */
+} MkErrorCode;
+
 /* ── Push callbacks ───────────────────────────────────────────────────────── */
 
 typedef struct MkCallbacks {
@@ -135,6 +141,9 @@ typedef struct MkCallbacks {
     void (*on_text)       (void *user_data, MkNode *node,
                            const char *text, size_t len);
     void (*on_node_modify)(void *user_data, MkNode *node);
+    /* Optional: called when a non-fatal parse error occurs.
+     * msg is a static string, valid only during the callback. */
+    void (*on_error)      (void *user_data, MkErrorCode code, const char *msg);
 } MkCallbacks;
 
 /* ── Plugin vtables (M7 fills in full definition) ─────────────────────────── */
@@ -173,7 +182,8 @@ int       mk_finish(MkParser *parser);   /* signal end of stream */
 
 /* Pull API */
 MkDelta  *mk_pull_delta(MkParser *parser);   /* NULL = no pending delta */
-void      mk_delta_free(MkDelta *delta);
+void      mk_delta_free(MkDelta *delta);     /* no-op; arena owns memory */
+void      mk_drain_deltas(MkParser *parser); /* discard all pending deltas */
 
 /* Plugin registration */
 int       mk_register_parser_plugin   (MkParser *, const MkParserPlugin *);

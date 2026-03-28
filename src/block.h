@@ -62,6 +62,7 @@ typedef struct MkBlockParser {
 
     size_t       src_offset;
     int          last_blank;    /* was last processed line blank?         */
+    int          line_overflow; /* 1 while current line is being truncated */
 } MkBlockParser;
 
 /* ── Public interface (used by MkParser in M6) ───────────────────────────── */
