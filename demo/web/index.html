@@ -156,11 +156,11 @@
   <span>Incremental Markdown parser · AI streaming demo</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
     <select id="sample-select">
-      <option value="gfm">GFM Showcase</option>
+      <option value="complete">All 25 Node Types</option>
       <option value="streaming">AI Streaming Sim</option>
       <option value="tables">Tables &amp; Alignment</option>
       <option value="nesting">Nested Structures</option>
-      <option value="links">Links &amp; Images</option>
+      <option value="links">Links, Images &amp; Auto-links</option>
     </select>
     <button class="primary" id="stream-btn">▶ Stream</button>
     <button id="parse-btn">Parse All</button>
@@ -222,66 +222,365 @@
 <script type="module">
 // ── Sample data ───────────────────────────────────────────────────────────────
 const SAMPLES = {
-  gfm: `# GFM Showcase
-
-## Headings, Emphasis & Strikethrough
-
-Regular paragraph with **bold**, *italic*, ~~strikethrough~~, and \`inline code\`.
-
-A hard break is two trailing spaces
-on the next line.
-
-## Fenced Code Block
-
-\`\`\`javascript
-const parser = new WasmMkParser(Module, {
-  onNodeOpen(type, node) { console.log('open', type, node); },
-  onText(text)           { process.stdout.write(text); },
-});
-\`\`\`
-
-## Blockquote
-
-> Blockquotes are useful for callouts.
-> They can span multiple lines.
-
-## Lists
-
-- Unordered item one
-- Unordered item two
-  - Nested item
-  - Another nested
-
-1. First ordered
-2. Second ordered
-
-- [x] Task done
-- [ ] Task pending
-
-## Table
-
-| Name     | Type     | Notes             |
-|----------|----------|-------------------|
-| HEADING  | Block    | ATX & Setext      |
-| LINK     | Inline   | \`[text](href)\`  |
-| TABLE    | Block    | GFM extension     |
-
-## Autolink & HTML
-
-Visit <https://github.com> for more.
-
-<div class="note">Raw HTML inline block.</div>
+  complete: `# mk-parser · Complete Node Type Reference
+> **All 25 node types** exercised in one document.
+> Watch Events and AST update as each block is parsed.
 
 ---
 
-Thematic break above.
+## ① HEADING — all six ATX levels
+
+# H1  level=1
+## H2  level=2
+### H3  level=3
+#### H4  level=4
+##### H5  level=5
+###### H6  level=6
+
+---
+
+## ② PARAGRAPH + TEXT
+
+This is a **PARAGRAPH** containing plain **TEXT** nodes.
+Every run of ordinary characters becomes a TEXT node inside the paragraph.
+
+A blank line above opens a fresh PARAGRAPH block.
+
+---
+
+## ③ SOFT_BREAK — single newline within paragraph
+
+Line one of this paragraph.
+Line two — the bare newline becomes a SOFT_BREAK node.
+Line three — another SOFT_BREAK between lines two and three.
+
+---
+
+## ④ HARD_BREAK — two trailing spaces before newline
+
+This line ends with two spaces
+A HARD_BREAK was emitted; this line follows it.
+Another line with two trailing spaces
+And its hard-break continuation.
+
+---
+
+## ⑤ EMPHASIS  ·  STRONG  ·  STRIKETHROUGH
+
+*Single asterisk — EMPHASIS*
+_Single underscore — EMPHASIS_
+**Double asterisk — STRONG**
+__Double underscore — STRONG__
+***Triple asterisk — STRONG + EMPHASIS nested***
+~~Two tildes — STRIKETHROUGH~~
+Normal text with ~~struck words~~ inline.
+Combined: **bold and *italic* inside strong**.
+
+---
+
+## ⑥ INLINE_CODE
+
+Call \`mk_feed(parser, data, len)\` to push bytes.
+Double-backtick span: \`\` \`escape me\` \` \`\` preserves the literal backtick.
+Longer span: \`MkArena *mk_arena_new(void)\`.
+
+---
+
+## ⑦ LINK — inline and titled
+
+[Plain link](https://example.com)
+[Link with title](https://example.com "Visit Example Domain")
+[Relative link](./docs/ARCHITECTURE.md)
+[Link with *emphasis* inside](https://example.com)
+
+---
+
+## ⑧ IMAGE
+
+![mk-parser banner](https://via.placeholder.com/240x48/0d1117/58a6ff?text=mk-parser "mk-parser incremental parser")
+![Small badge](https://via.placeholder.com/80x20/161b22/3fb950?text=C11 "Pure C11")
+![No title](https://via.placeholder.com/60x20/21262d/d29922?text=WASM)
+
+---
+
+## ⑨ AUTO_LINK — URL and email
+
+URL: <https://github.com/Empty0Qc/Markdown_Parser>
+Email: <dev@example.com>
+Another URL: <https://spec.commonmark.org/0.31.2/>
+
+---
+
+## ⑩ HTML_INLINE — raw inline tags
+
+Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> to open the palette.
+<mark>Highlighted</mark> text via raw HTML.
+A <abbr title="GitHub Flavored Markdown">GFM</abbr> abbreviation.
+Superscript: E=mc<sup>2</sup>. Subscript: H<sub>2</sub>O.
+
+---
+
+## ⑪ CODE_BLOCK — fenced with language
+
+\`\`\`c
+/* C11 — hot-path feed loop */
+int mk_block_feed(MkBlockParser *bp, const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        char c = data[i];
+        if (c == '\\r') continue;
+        if (c == '\\n') { process_line(bp, bp->line_buf, bp->line_len); bp->line_len = 0; }
+        else if (bp->line_len < MK_BLOCK_LINE_MAX - 1) bp->line_buf[bp->line_len++] = c;
+    }
+    return 0;
+}
+\`\`\`
+
+\`\`\`javascript
+// JS — streaming from an LLM
+const parser = new WasmMkParser(Module, {
+  onNodeOpen(type, node) { console.log('open ', TYPE_NAME[type], node); },
+  onNodeClose(type)      { console.log('close', TYPE_NAME[type]); },
+  onText(text)           { process.stdout.write(text); },
+});
+for await (const chunk of stream) parser.feed(chunk);
+parser.finish();
+\`\`\`
+
+\`\`\`python
+# Python — Anthropic streaming
+import anthropic
+client = anthropic.Anthropic()
+with client.messages.stream(model="claude-opus-4-6", max_tokens=1024,
+        messages=[{"role":"user","content":"Write a poem"}]) as s:
+    for text in s.text_stream:
+        parser.feed(text)
+parser.finish()
+\`\`\`
+
+\`\`\`swift
+// Swift — iOS demo
+let parser = try MkParser(
+    onNodeOpen:  { type, node in print("open", type) },
+    onNodeClose: { type, _   in print("close", type) },
+    onText:      { text      in print("text", text)  }
+)
+try parser.feed("# Hello\\n").finish()
+\`\`\`
+
+\`\`\`kotlin
+// Kotlin — Android demo
+MkParser(onNodeOpen = { t, f, a -> Log.d("mk", "open $t") })
+    .use { parser -> parser.feed("# Hello\\n").finish() }
+\`\`\`
+
+---
+
+## ⑫ CODE_BLOCK — fenced, no language tag
+
+\`\`\`
+plain fenced block — no language hint
+    indented content preserved verbatim
+        deeper indent also preserved
+\`\`\`
+
+---
+
+## ⑬ BLOCK_QUOTE — single and nested
+
+> A single-level blockquote. It can continue across multiple lines.
+> This is still the same BLOCK_QUOTE node.
+
+> Nested blockquotes:
+> > Second level — BLOCK_QUOTE inside BLOCK_QUOTE.
+> > > Third level — triple nesting.
+> >
+> > Back to second level after the blank.
+
+> A blockquote with **bold**, *italic*, \`code\`, and a [link](https://example.com).
+
+---
+
+## ⑭ LIST — unordered tight (markers -, *, +)
+
+- Alpha — hyphen marker
+- Beta — hyphen marker
+- Gamma — hyphen marker
+
+* Star one
+* Star two
+* Star three
+
++ Plus one
++ Plus two
++ Plus three
+
+---
+
+## ⑮ LIST — ordered, various start numbers
+
+1. Item one (start=1)
+2. Item two
+3. Item three
+4. Item four
+
+42. Starting at 42
+43. Item 43
+44. Item 44
+
+---
+
+## ⑯ LIST — nested (multi-level)
+
+- Level 1 · A
+  - Level 2 · A1
+    - Level 3 · A1a
+    - Level 3 · A1b
+  - Level 2 · A2
+- Level 1 · B
+  - Level 2 · B1
+
+1. Ordered level 1
+   1. Ordered level 2 · a
+   2. Ordered level 2 · b
+      - Mixed unordered inside ordered
+      - Another mixed item
+2. Back to ordered level 1
+
+---
+
+## ⑰ TASK_LIST_ITEM — checked and unchecked
+
+- [x] Arena allocator (M2) — done
+- [x] AST data structures (M3) — done
+- [x] Block parser (M4) — done
+- [x] Inline parser (M5) — done
+- [x] Push / Pull API (M6) — done
+- [x] Plugin system (M7) — done
+- [x] WASM binding (M8a) — done
+- [x] Android JNI (M8c) — done
+- [x] iOS Swift binding (M8d) — done
+- [x] JS/TS wrapper (M9) — done
+- [x] Web demo (M10) — done
+- [ ] CommonMark spec 100% — in progress
+- [ ] Fuzzing harness — pending
+- [ ] npm publish — pending
+
+---
+
+## ⑱ THEMATIC_BREAK — three syntax variants
+
+Hyphens:
+
+---
+
+Asterisks:
+
+***
+
+Underscores:
+
+___
+
+---
+
+## ⑲ HTML_BLOCK — raw block-level HTML
+
+<table>
+  <thead><tr><th>Binding</th><th>Language</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>WASM</td><td>C → JS</td><td>✅ done</td></tr>
+    <tr><td>Node.js N-API</td><td>C → JS</td><td>✅ done</td></tr>
+    <tr><td>Android JNI</td><td>C → Kotlin</td><td>✅ done</td></tr>
+    <tr><td>iOS Swift</td><td>C → Swift</td><td>✅ done</td></tr>
+  </tbody>
+</table>
+
+<details>
+  <summary><strong>Click to expand — HTML_BLOCK demo</strong></summary>
+  <p>This entire section is a raw HTML block. mk-parser emits it as a single
+  HTML_BLOCK node with the raw text as content.</p>
+</details>
+
+---
+
+## ⑳ TABLE — all four column alignments
+
+| Node Type       | Category | # Variants | Spec pass |
+|:----------------|:--------:|-----------:|-----------|
+| HEADING         | Block    |          6 | ✅        |
+| PARAGRAPH       | Block    |          ∞ | ✅        |
+| CODE_BLOCK      | Block    |          3 | ✅        |
+| BLOCK_QUOTE     | Block    |          ∞ | ✅        |
+| LIST            | Block    |          2 | ✅        |
+| LIST_ITEM       | Block    |          ∞ | ✅        |
+| THEMATIC_BREAK  | Block    |          3 | ✅        |
+| HTML_BLOCK      | Block    |          7 | ✅        |
+| TABLE           | Block    |          ∞ | ✅ (self!)|
+| TEXT            | Inline   |          ∞ | ✅        |
+| SOFT_BREAK      | Inline   |          1 | ✅        |
+| HARD_BREAK      | Inline   |          2 | ✅        |
+| EMPHASIS        | Inline   |          2 | ✅        |
+| STRONG          | Inline   |          2 | ✅        |
+| STRIKETHROUGH   | Inline   |          1 | ✅        |
+| INLINE_CODE     | Inline   |          ∞ | ✅        |
+| LINK            | Inline   |          2 | ✅        |
+| IMAGE           | Inline   |          2 | ✅        |
+| AUTO_LINK       | Inline   |          2 | ✅        |
+| HTML_INLINE     | Inline   |          ∞ | ✅        |
+| TASK_LIST_ITEM  | Inline   |          2 | ✅        |
+
+---
+
+## ㉑ TABLE — MODIFY event (paragraph → table promotion)
+
+When mk-parser sees the separator row below, a **MODIFY** event fires
+to promote the PARAGRAPH to a TABLE in place. Watch the Events panel.
+
+| Before | After |
+|--------|-------|
+| PARAGRAPH opens | MODIFY fires |
+| separator arrives | TABLE takes over |
+| rows follow | TABLE_ROW + TABLE_CELL |
+
+---
+
+## ㉒ Blockquote with full mixed content
+
+> ### Heading inside blockquote
+>
+> A paragraph with **bold**, *italic*, ~~struck~~, \`code\`, and [link](https://example.com).
+>
+> \`\`\`js
+> // Code block inside blockquote
+> const x = mk_feed(parser, chunk, len);
+> \`\`\`
+>
+> - List item A inside blockquote
+> - List item B inside blockquote
+>   - Nested inside the blockquote list
+>
+> | Col A | Col B |
+> |-------|-------|
+> | cell1 | cell2 |
+
+---
+
+## ㉓ Inline — everything in one paragraph
+
+The final paragraph mixes **every inline type**: *EMPHASIS* (star and _underscore_),
+**STRONG** (double star and __underscore__), ***STRONG+EMPHASIS***, ~~STRIKETHROUGH~~,
+\`INLINE_CODE\`, [LINK](https://example.com "titled"), ![IMAGE](https://via.placeholder.com/20 "img"),
+<https://AUTO_LINK.example.com>, <inline@email.example>, <mark>HTML_INLINE mark</mark>,
+<kbd>Ctrl</kbd>+<kbd>V</kbd>, and a SOFT_BREAK follows
+here. Then two trailing spaces for a HARD_BREAK
+and this line starts after the HARD_BREAK node.
 `,
 
   streaming: `# AI Streaming Simulation
 
 This demo feeds text character-by-character to simulate an LLM token stream.
 
-Press **▶ Stream** and watch the events fire in real-time.
+Press **▶ Stream** and watch the Events, AST, and Preview panels update live.
 
 \`\`\`python
 import anthropic
@@ -300,75 +599,153 @@ parser.finish()
 
 The parser emits events **incrementally** — headings, paragraphs, and code blocks
 are opened and closed as soon as enough tokens arrive.
+
+## How it works
+
+1. Each \`mk_feed()\` call may be as small as **1 byte**
+2. The block parser buffers incomplete lines in \`line_buf\`
+3. Once a full line arrives it is dispatched to \`process_line()\`
+4. Completed blocks fire callbacks immediately — no full-document buffering
+
+> The key insight: a *heading* is certain the moment its trailing newline
+> arrives. A *paragraph* is certain when a blank line follows. A *table*
+> is promoted via a **MODIFY** event when the separator row arrives.
 `,
 
   tables: `# Tables & Column Alignment
 
-| Left aligned | Center aligned | Right aligned |
-|:-------------|:--------------:|--------------:|
-| cell 1       | cell 2         | cell 3        |
-| longer cell  | mid            | 42            |
+## All four alignments
+
+| Left | Center | Right | None |
+|:-----|:------:|------:|------|
+| L    |   C    |     R | N    |
+| longer text | mid value | 123456 | default |
+| α | β | γ | δ |
 
 ## Nested table in blockquote
 
-> | A | B |
-> |---|---|
-> | 1 | 2 |
+> | A         | B          |
+> |:----------|:----------:|
+> | blockquote| table cell |
+> | row 2     | value      |
 
-## Promotion demo
+## MODIFY promotion demo
 
-A table starts as a paragraph and is **promoted** via a MODIFY event
-once the separator row is detected.
+Watch the Events panel — this paragraph becomes a TABLE the moment
+the separator row \`|---|---|\` is parsed.
+
+| Before sep | After sep |
+|---|---|
+| PARAGRAPH | TABLE via MODIFY |
+| row 2 A | row 2 B |
+
+## Table with inline content in cells
+
+| Feature | Code | Status |
+|---------|------|--------|
+| **Bold cells** | \`mk_feed()\` | *italic* |
+| ~~deprecated~~ | \`old_api()\` | removed |
+| [linked](https://example.com) | auto | <https://x.com> |
 `,
 
   nesting: `# Nested Structures
 
 ## Deeply nested lists
 
-- Level 1
-  - Level 2
-    - Level 3
-      - Level 4
-  - Back to 2
+- Level 1 · item A
+  - Level 2 · A1
+    - Level 3 · A1a
+      - Level 4 · A1a-i
+      - Level 4 · A1a-ii
+    - Level 3 · A1b
+  - Level 2 · A2
+- Level 1 · item B
+  - Level 2 · B1
+  - Level 2 · B2
 
-## Nested blockquotes
+## Ordered + unordered mixed nesting
 
-> Outer quote
-> > Inner quote
-> > > Triple nested
+1. Ordered top
+   - Unordered child
+   - Another child
+     1. Re-ordered grandchild
+     2. Second grandchild
+2. Back to ordered
+
+## Deeply nested blockquotes
+
+> Level 1 quote
+> > Level 2 quote
+> > > Level 3 quote
+> > > > Level 4 quote (deep!)
+> > >
+> > > Back to level 3
+> >
+> > Back to level 2
+
+## Blockquote containing lists and code
+
+> **Mixed content blockquote:**
+>
+> - Item one with *emphasis*
+> - Item two with \`code\`
+>
+> \`\`\`js
+> // code block inside blockquote
+> console.log("nested");
+> \`\`\`
 
 ## List in blockquote
 
-> - Item A
-> - Item B
->   - Sub B1
+> - Item A in blockquote
+> - Item B in blockquote
+>   - Nested B1
+>   - Nested B2
+> - Item C in blockquote
 `,
 
-  links: `# Links & Images
+  links: `# Links, Images & Auto-links
 
 ## Inline links
 
-[OpenAI](https://openai.com)
-[Anthropic](https://anthropic.com "AI Safety Company")
+[Simple link](https://example.com)
+[Link with title](https://example.com "Example Domain")
+[Relative path](./docs/ARCHITECTURE.md)
+[Anchor link](#headings)
+
+## Links with inline content
+
+[Link with **bold** inside](https://example.com)
+[Link with *italic* inside](https://example.com "titled")
+[Link with \`code\` inside](https://example.com)
 
 ## Auto-links
 
-<https://example.com>
-<user@example.com>
+URL: <https://github.com>
+Another: <https://spec.commonmark.org/0.31.2/>
+Email: <user@example.com>
+Another email: <dev+test@subdomain.example.com>
 
-## Reference-style links
+## Images — inline and titled
 
-*Note: mk-parser focuses on inline/fenced CommonMark; reference links TBD.*
+![Full alt and title](https://via.placeholder.com/200x60/0d1117/58a6ff?text=mk-parser "mk-parser logo")
+![Alt only](https://via.placeholder.com/120x40/161b22/3fb950?text=AST)
+![Tiny badge](https://via.placeholder.com/60x20/21262d/d29922?text=WASM)
 
-## Images
+## Images inside links (linked images)
 
-![Alt text](https://via.placeholder.com/150 "Placeholder")
+[![Linked image](https://via.placeholder.com/100x30/0d1117/58a6ff?text=click+me "linked image")](https://example.com)
 
-## Emphasis combos
+## Emphasis combinations
 
-***bold and italic*** text here.
-__strong with underscores__
-_single italic_
+*single star italic*
+_single underscore italic_
+**double star bold**
+__double underscore bold__
+***bold and italic***
+___bold and italic underscores___
+**bold with *nested italic* inside**
+~~strikethrough with **bold** inside~~
 `,
 };
 
@@ -436,7 +813,7 @@ sampleSelect.addEventListener('change', () => {
   preview.innerHTML  = '';
   resetStats();
 });
-editor.value = SAMPLES['gfm'];
+editor.value = SAMPLES['complete'];
 
 // ── Event rendering ───────────────────────────────────────────────────────────
 let evIdx = 0;
