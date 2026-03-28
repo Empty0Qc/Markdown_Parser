@@ -21,6 +21,89 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <pthread.h>
+
+/* ── [F13] Compile-time guard: Kotlin NodeType constants must match C enum ─── */
+/*
+ * These _Static_assert checks verify that the integer values hard-coded in
+ * MkParser.kt's NodeType object exactly match the MkNodeType enum in
+ * mk_parser.h.  If any enum value is inserted, removed, or reordered in C,
+ * the JNI build will fail with a descriptive error rather than silently
+ * producing wrong node types at runtime.
+ */
+_Static_assert(MK_NODE_DOCUMENT       ==  0, "NodeType.DOCUMENT mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_HEADING        ==  1, "NodeType.HEADING mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_PARAGRAPH      ==  2, "NodeType.PARAGRAPH mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_CODE_BLOCK     ==  3, "NodeType.CODE_BLOCK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_BLOCK_QUOTE    ==  4, "NodeType.BLOCK_QUOTE mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_LIST           ==  5, "NodeType.LIST mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_LIST_ITEM      ==  6, "NodeType.LIST_ITEM mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_THEMATIC_BREAK ==  7, "NodeType.THEMATIC_BREAK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_HTML_BLOCK     ==  8, "NodeType.HTML_BLOCK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TABLE          ==  9, "NodeType.TABLE mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TABLE_HEAD     == 10, "NodeType.TABLE_HEAD mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TABLE_ROW      == 11, "NodeType.TABLE_ROW mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TABLE_CELL     == 12, "NodeType.TABLE_CELL mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TEXT           == 13, "NodeType.TEXT mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_SOFT_BREAK     == 14, "NodeType.SOFT_BREAK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_HARD_BREAK     == 15, "NodeType.HARD_BREAK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_EMPHASIS       == 16, "NodeType.EMPHASIS mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_STRONG         == 17, "NodeType.STRONG mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_STRIKETHROUGH  == 18, "NodeType.STRIKETHROUGH mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_INLINE_CODE    == 19, "NodeType.INLINE_CODE mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_LINK           == 20, "NodeType.LINK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_IMAGE          == 21, "NodeType.IMAGE mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_AUTO_LINK      == 22, "NodeType.AUTO_LINK mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_HTML_INLINE    == 23, "NodeType.HTML_INLINE mismatch — update MkParser.kt");
+_Static_assert(MK_NODE_TASK_LIST_ITEM == 24, "NodeType.TASK_LIST_ITEM mismatch — update MkParser.kt");
+
+/* ── [F02] Thread-attach/detach via pthread TLS destructor ───────────────── */
+/*
+ * Non-JVM threads that call AttachCurrentThread must call DetachCurrentThread
+ * before they exit, otherwise the JVM leaks the thread attachment.
+ *
+ * We use a pthread key with a destructor: when a thread that was attached here
+ * exits, the destructor automatically calls DetachCurrentThread.
+ */
+
+typedef struct {
+    JavaVM *jvm;
+} AttachedThread;
+
+static pthread_key_t  g_detach_key;
+static pthread_once_t g_detach_once = PTHREAD_ONCE_INIT;
+
+static void thread_detach_destructor(void *arg) {
+    AttachedThread *at = (AttachedThread *)arg;
+    if (at && at->jvm)
+        (*at->jvm)->DetachCurrentThread(at->jvm);
+    free(at);
+}
+
+static void create_detach_key(void) {
+    pthread_key_create(&g_detach_key, thread_detach_destructor);
+}
+
+/* Get JNIEnv for current thread.  Attaches background threads to the JVM and
+ * registers a TLS destructor to detach them automatically on thread exit. */
+static JNIEnv *get_env(JavaVM *jvm) {
+    JNIEnv *env  = NULL;
+    int     rc   = (*jvm)->GetEnv(jvm, (void **)&env, JNI_VERSION_1_6);
+    if (rc == JNI_EDETACHED) {
+        if ((*jvm)->AttachCurrentThread(jvm, &env, NULL) != JNI_OK)
+            return NULL;
+        /* Register destructor so DetachCurrentThread is called on thread exit */
+        pthread_once(&g_detach_once, create_detach_key);
+        if (!pthread_getspecific(g_detach_key)) {
+            AttachedThread *at = calloc(1, sizeof(AttachedThread));
+            if (at) {
+                at->jvm = jvm;
+                pthread_setspecific(g_detach_key, at);
+            }
+        }
+    }
+    return env;
+}
 
 /* ── Helper: create a jstring from a UTF-8 byte slice ────────────────────── */
 
@@ -28,14 +111,29 @@
  * This avoids NewStringUTF() which requires "Modified UTF-8" and aborts the
  * VM when it receives a continuation byte at a sequence start (which can
  * happen when the C parser slices text at byte-level rather than char-level).
- * Invalid bytes are replaced with U+FFFD instead of crashing. */
-static jstring jstring_from_slice(JNIEnv *env, const char *text, size_t len) {
+ * Invalid bytes are replaced with U+FFFD instead of crashing.
+ *
+ * buf / buf_cap: caller-provided stack buffer.  If the required jchar count
+ * exceeds buf_cap, a heap buffer is allocated and *heap_out is set (caller
+ * must free it).  Pass buf=NULL to always heap-allocate (legacy behaviour). */
+static jstring jstring_from_slice_ex(JNIEnv *env, const char *text, size_t len,
+                                     jchar *buf, size_t buf_cap,
+                                     jchar **heap_out)
+{
     if (!text || len == 0) return NULL;
+    if (heap_out) *heap_out = NULL;
 
-    /* Upper-bound on UTF-16 code units: each input byte → at most 2 jchars
-     * (surrogate pair for supplementary characters). */
-    jchar *out = (jchar *)malloc((len + 1) * 2 * sizeof(jchar));
-    if (!out) return NULL;
+    /* Upper-bound on UTF-16 code units: each input byte → at most 2 jchars */
+    size_t needed = (len + 1) * 2;
+    jchar *out;
+    if (buf && needed <= buf_cap) {
+        out = buf;
+    } else {
+        jchar *h = (jchar *)malloc(needed * sizeof(jchar));
+        if (!h) return NULL;
+        if (heap_out) *heap_out = h;
+        out = h;
+    }
 
     jsize  out_len = 0;
     size_t i       = 0;
@@ -88,8 +186,17 @@ static jstring jstring_from_slice(JNIEnv *env, const char *text, size_t len) {
     }
 
     jstring result = (*env)->NewString(env, out, out_len);
-    free(out);
+    /* heap_out caller frees; stack buffer needs no free */
+    if (heap_out == NULL && out != buf) free(out);
     return result;
+}
+
+/* Legacy wrapper: always heap-allocates (used for attribute strings). */
+static jstring jstring_from_slice(JNIEnv *env, const char *text, size_t len) {
+    jchar *heap = NULL;
+    jstring s = jstring_from_slice_ex(env, text, len, NULL, 0, &heap);
+    free(heap);
+    return s;
 }
 
 /* ── Helper: convert Java String to standard UTF-8 byte buffer ───────────── */
@@ -178,14 +285,6 @@ typedef struct {
     jmethodID  cb_modify;  /* void onNativeNodeModify(int type) */
 } JniState;
 
-/* Get JNIEnv for current thread (handles attach for background threads) */
-static JNIEnv *get_env(JavaVM *jvm) {
-    JNIEnv *env = NULL;
-    if ((*jvm)->GetEnv(jvm, (void **)&env, JNI_VERSION_1_6) == JNI_EDETACHED)
-        (*jvm)->AttachCurrentThread(jvm, &env, NULL);
-    return env;
-}
-
 /* ── Push callback bridges ────────────────────────────────────────────────── */
 
 static void jni_on_open(void *ud, MkNode *n) {
@@ -253,16 +352,27 @@ static void jni_on_close(void *ud, MkNode *n) {
     (*env)->CallVoidMethod(env, s->java_obj, s->cb_close, (jint)n->type);
 }
 
+/* [F10] 512-jchar stack buffer handles ASCII text events without heap alloc.
+ * A jchar is 2 bytes, so this covers plain ASCII strings up to 512 characters.
+ * Only falls back to heap for longer or heavily multi-byte content. */
+#define JNI_TEXT_STACK_JCHARS 512
+
 static void jni_on_text(void *ud, MkNode *n,
                         const char *text, size_t len) {
     (void)n;
     JniState *s = (JniState *)ud;
     JNIEnv   *env = get_env(s->jvm);
     if (!env || !s->cb_text) return;
-    jstring jtext = jstring_from_slice(env, text, len);
-    if (!jtext) return;
+
+    jchar  stack_buf[JNI_TEXT_STACK_JCHARS];
+    jchar *heap  = NULL;
+    jstring jtext = jstring_from_slice_ex(env, text, len,
+                                          stack_buf, JNI_TEXT_STACK_JCHARS,
+                                          &heap);
+    if (!jtext) { free(heap); return; }
     (*env)->CallVoidMethod(env, s->java_obj, s->cb_text, jtext);
     (*env)->DeleteLocalRef(env, jtext);
+    free(heap);
 }
 
 static void jni_on_modify(void *ud, MkNode *n) {

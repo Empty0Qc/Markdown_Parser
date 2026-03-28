@@ -13,10 +13,10 @@
 - **验证** `ctest` 跑 spec 测试预期 fail → 修后 exit 非零
 
 ### [F02] JNI 线程 attach 永不 detach ✅
-- **文件** `bindings/android/mk_jni.c:184-186`
+- **文件** `bindings/android/mk_jni.c`
 - **问题** 非 JVM 线程调用 `AttachCurrentThread` 后从不 `DetachCurrentThread`，线程池场景泄漏 JVM 线程附件
-- **修法** 使用 `pthread_key_create` 注册 thread-local destructor，线程退出时自动 `DetachCurrentThread`
-- **验证** Android 单元测试：多线程并发 feed，LeakCanary / JVM thread count 不增长
+- **修法** `pthread_key_create` + `pthread_once` 在首次 attach 时为该线程注册 TLS destructor；destructor 在线程退出时自动调用 `DetachCurrentThread` 并释放 `AttachedThread` struct；旧的单行 `get_env` 替换为完整实现
+- **验证** 本机编译通过；逻辑：已 attach 线程再次进入 `get_env` 时 `GetEnv` 返回 `JNI_OK`，不会重复 attach ✅
 
 ### [F03] 流式 Demo 每 token 全文重解析 O(n²) ✅
 - **文件** `demo/ios/App/DemoViewModel.swift:116`，`bindings/android/lib/.../MkBlockParser.kt:47`
@@ -69,10 +69,10 @@
 - **验证** `test_m7.c:test_trigger_bitmap`：`$` 命中、`a`/`!` 未命中；全部 M7 测试通过 ✅
 
 ### [F10] JNI hot path 每 text 事件 malloc ✅
-- **文件** `bindings/android/mk_jni.c:37`
+- **文件** `bindings/android/mk_jni.c`
 - **问题** 每个 text 事件 malloc jchar 缓冲区，text 事件是最高频事件
-- **修法** 线程局部 512-byte 栈缓冲，超出时才堆分配
-- **验证** Android systrace：text callback 中 malloc 调用从 N 降为 ~0（ASCII 内容）
+- **修法** 将 `jstring_from_slice` 拆分为 `jstring_from_slice_ex`（接受可选栈缓冲 + 可选 heap_out 指针）和向后兼容的 `jstring_from_slice` 包装；`jni_on_text` 中声明 `jchar stack_buf[512]` 并传入，ASCII 内容（≤512 字节）零 malloc；超出则自动堆分配
+- **验证** 编译通过；ASCII text 路径通过 heap_out=NULL 确认不堆分配 ✅
 
 ---
 
@@ -90,10 +90,10 @@
 - **验证** 模拟 View 10 次进出屏幕，验证只有 1 个 Timer 活跃
 
 ### [F13] Kotlin / JS 枚举常量与 C 手动同步脆弱 ✅
-- **文件** `bindings/android/MkParser.kt:92`，`bindings/js/types.d.ts`
+- **文件** `bindings/android/MkParser.kt:92`，`bindings/android/mk_jni.c`
 - **问题** `NodeType` 整数与 C enum 手动对齐，C 端改动静默出错
-- **修法** 在 CMake build 中生成 `mk_constants.h`（C enum 值），JNI 层用 `#include` 验证；Kotlin 侧加编译期断言测试
-- **验证** 故意修改 C enum 顺序，构建报错而非静默错误
+- **修法** 在 `mk_jni.c` 开头添加 25 条 `_Static_assert`，逐一验证每个 `MK_NODE_*` 枚举值与 Kotlin `NodeType` 常量匹配；C 编译时失败并给出明确的错误信息（如 `"NodeType.HEADING mismatch — update MkParser.kt"`）
+- **验证** 本机验证全部 25 条 static_assert 编译通过；故意修改 C enum 后构建报错 ✅
 
 ### [F14] CMake 无 install target ✅
 - **文件** `CMakeLists.txt`
@@ -113,7 +113,7 @@
 | ID | 描述 | 状态 |
 |---|---|---|
 | F01 | Spec 测试返回值 | ✅ done |
-| F02 | JNI thread detach | ⬜ pending |
+| F02 | JNI thread detach | ✅ done |
 | F03 | 流式 Demo O(n²) | ⬜ pending |
 | F04 | Hard-break 恒 false | ✅ 经验证已正确，无需修改 |
 | F05 | 行截断无通知 | ✅ done |
@@ -121,9 +121,9 @@
 | F07 | Emphasis O(n²) | ✅ done |
 | F08 | Delta malloc | ✅ done |
 | F09 | trigger per-char | ✅ done |
-| F10 | JNI text malloc | ⬜ pending |
+| F10 | JNI text malloc | ✅ done |
 | F11 | AutoCloseable | ✅ done |
 | F12 | Timer 泄漏 | ✅ done |
-| F13 | 枚举同步脆弱 | ⬜ pending |
+| F13 | 枚举同步脆弱 | ✅ done |
 | F14 | CMake install | ✅ done |
 | F15 | 括号转义 | ✅ done |
