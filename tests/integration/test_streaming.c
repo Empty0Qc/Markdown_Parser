@@ -122,6 +122,13 @@ static int logs_equivalent(const EventLog *a, const EventLog *b) {
     return 1;
 }
 
+static int find_close(const EventLog *log, MkNodeType t) {
+    for (int i = 0; i < log->count; i++)
+        if (log->events[i].kind == EV_CLOSE && log->events[i].node_type == t)
+            return i;
+    return -1;
+}
+
 /* Find first MODIFY event of given type */
 static int find_modify(const EventLog *log, MkNodeType t) {
     for (int i = 0; i < log->count; i++)
@@ -314,6 +321,69 @@ static void test_complex_document(void) {
     PASS("complex_document");
 }
 
+/* [F06] mk_parser_free without mk_finish must still deliver all close events */
+static void test_free_without_finish(void) {
+    /* Feed content but skip mk_finish — mk_parser_free must call it internally.
+     * We must receive: OPEN(doc) OPEN(para) TEXT CLOSE(para) CLOSE(doc) */
+    EventLog log = {.count = 0};
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = {
+        .user_data      = &log,
+        .on_node_open   = ev_open,
+        .on_node_close  = ev_close,
+        .on_text        = ev_text,
+        .on_node_modify = ev_modify,
+    };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, "hello world\n", 12);
+    /* Deliberately skip mk_finish */
+    mk_parser_free(p);
+    mk_arena_free(a);
+
+    /* Must have received close events for paragraph and document */
+    assert(find_close(&log, MK_NODE_PARAGRAPH) >= 0);
+    assert(find_close(&log, MK_NODE_DOCUMENT)  >= 0);
+    /* mk_finish must be idempotent: calling again on a freed parser is UB, but
+     * the close events must appear exactly once */
+    int para_closes = 0, doc_closes = 0;
+    for (int i = 0; i < log.count; i++) {
+        if (log.events[i].kind == EV_CLOSE) {
+            if (log.events[i].node_type == MK_NODE_PARAGRAPH) para_closes++;
+            if (log.events[i].node_type == MK_NODE_DOCUMENT)  doc_closes++;
+        }
+    }
+    assert(para_closes == 1);
+    assert(doc_closes  == 1);
+    PASS("free_without_finish");
+}
+
+/* [F06] mk_finish followed by mk_parser_free must NOT emit duplicate events */
+static void test_finish_then_free_no_duplicates(void) {
+    EventLog log = {.count = 0};
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = {
+        .user_data      = &log,
+        .on_node_open   = ev_open,
+        .on_node_close  = ev_close,
+        .on_text        = ev_text,
+        .on_node_modify = ev_modify,
+    };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, "hello world\n", 12);
+    mk_finish(p);          /* explicit finish */
+    mk_parser_free(p);     /* free must NOT call finish again */
+    mk_arena_free(a);
+
+    int doc_closes = 0;
+    for (int i = 0; i < log.count; i++) {
+        if (log.events[i].kind == EV_CLOSE &&
+            log.events[i].node_type == MK_NODE_DOCUMENT)
+            doc_closes++;
+    }
+    assert(doc_closes == 1);   /* exactly one CLOSE(document) */
+    PASS("finish_then_free_no_duplicates");
+}
+
 /* ── main ─────────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -328,6 +398,8 @@ int main(void) {
     test_table_chunked();
     test_link_chunked();
     test_complex_document();
+    test_free_without_finish();
+    test_finish_then_free_no_duplicates();
     printf("All streaming tests passed.\n\n");
     return 0;
 }

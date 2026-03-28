@@ -29,15 +29,25 @@ private enum Mocha {
 
 private struct BlinkCursor: View {
     @State private var visible = true
+    @State private var timer: Timer?
+
     var body: some View {
         Text("▌")
             .foregroundColor(Mocha.mauve)
             .opacity(visible ? 1 : 0)
             .onAppear {
-                let timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+                // Invalidate any previous timer before creating a new one
+                // so repeated appear/disappear cycles don't accumulate timers.
+                timer?.invalidate()
+                let t = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
                     visible.toggle()
                 }
-                RunLoop.main.add(timer, forMode: .common)
+                RunLoop.main.add(t, forMode: .common)
+                timer = t
+            }
+            .onDisappear {
+                timer?.invalidate()
+                timer = nil
             }
     }
 }

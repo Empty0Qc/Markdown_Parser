@@ -40,6 +40,28 @@ target_compile_options(mk_parser_core PRIVATE
     $<$<C_COMPILER_ID:MSVC>:/W4 /WX>
 )
 
+# ── Install rules ────────────────────────────────────────────────────────────
+# cmake --install build/native [--prefix /usr/local]
+
+include(GNUInstallDirs)
+
+install(TARGETS mk_parser_core
+    EXPORT  mk_parserTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES include/mk_parser.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(EXPORT mk_parserTargets
+    FILE        mk_parserTargets.cmake
+    NAMESPACE   mk_parser::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mk_parser
+)
+
 # ── Platform bindings ─────────────────────────────────────────────────────────
 
 if(EMSCRIPTEN)

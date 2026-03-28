@@ -18,13 +18,20 @@ package com.mkparser
  * parser.finish()
  * parser.destroy()
  * ```
+ *
+ * Implements [AutoCloseable] so it can be used with Kotlin's `use { }` block:
+ * ```kotlin
+ * MkParser(onText = { … }).use { parser ->
+ *     parser.feed("# Hello\n").finish()
+ * }
+ * ```
  */
 class MkParser(
     private val onNodeOpen:  ((type: Int, flags: Int, attr: String?) -> Unit)? = null,
     private val onNodeClose: ((type: Int) -> Unit)?                            = null,
     private val onText:      ((text: String) -> Unit)?                         = null,
     private val onModify:    ((type: Int) -> Unit)?                            = null,
-) {
+) : AutoCloseable {
     private var nativeHandle: Long = 0
 
     init {
@@ -56,6 +63,9 @@ class MkParser(
             nativeHandle = 0L
         }
     }
+
+    /** [AutoCloseable] implementation — delegates to [destroy]. */
+    override fun close() = destroy()
 
     // ── Called from native (JNI callbacks) ───────────────────────────────────
 

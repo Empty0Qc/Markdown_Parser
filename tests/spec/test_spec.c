@@ -328,12 +328,28 @@ static SectionStat *get_section(const char *name) {
 /* ── main ─────────────────────────────────────────────────────────────────── */
 
 int main(int argc, char **argv) {
-    /* Locate spec.json: same directory as this binary, or argv[1], or fallback */
+    /* Locate spec.json: same directory as this binary, or argv[1], or fallback.
+     * Optional flag: --min-pass-pct=N  (0–100, default 0)
+     *   When N > 0: exit 1 if overall pass rate < N%.
+     *   When N = 0 (default): informational only, exit 0 unless spec fails to load.
+     * This lets CI enforce a regression baseline while the parser is still incomplete.
+     */
     const char *spec_path = NULL;
     char path_buf[1024];
+    int min_pass_pct = 0;  /* 0 = informational; set via --min-pass-pct=N */
 
-    if (argc > 1) {
-        spec_path = argv[1];
+    /* Parse arguments: accept --min-pass-pct=N anywhere; treat first non-flag as spec path */
+    for (int i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "--min-pass-pct=", 15) == 0) {
+            min_pass_pct = (int)strtol(argv[i] + 15, NULL, 10);
+            if (min_pass_pct < 0)   min_pass_pct = 0;
+            if (min_pass_pct > 100) min_pass_pct = 100;
+        } else if (!spec_path) {
+            spec_path = argv[i];
+        }
+    }
+
+    if (!spec_path) {
     } else {
         /* Try relative paths */
         const char *candidates[] = {
@@ -457,7 +473,15 @@ int main(int argc, char **argv) {
     printf("Total: %d pass, %d fail, %d skip / %d examples — %.1f%% pass rate\n",
            total_pass, total_fail, total_skip, total_all, overall);
 
-    /* Return 0 always so CTest captures the report.
-     * The test is considered "passing" if we get a report at all. */
+    /* Exit code:
+     *   --min-pass-pct=0 (default): informational only — exit 0 (report captured).
+     *   --min-pass-pct=N  (N > 0):  exit 1 if pass rate < N%, enforcing a baseline.
+     * Raise N in CMakeLists.txt as spec compliance improves.
+     */
+    if (min_pass_pct > 0 && overall < (double)min_pass_pct) {
+        printf("FAIL: pass rate %.1f%% is below required minimum %d%%\n",
+               overall, min_pass_pct);
+        return 1;
+    }
     return 0;
 }

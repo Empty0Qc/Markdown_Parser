@@ -128,9 +128,13 @@ static int parse_link_dest(const char *s, size_t pos, size_t end,
     } else {
         href_s = pos;
         int depth = 0;
-        while (pos < end && s[pos] != ')' && s[pos] != ' ' && s[pos] != '\t') {
-            if      (s[pos] == '(') depth++;
-            else if (s[pos] == ')') { if (!depth) break; depth--; }
+        while (pos < end && s[pos] != ' ' && s[pos] != '\t') {
+            if (s[pos] == '\\' && pos + 1 < end) {
+                pos += 2;  /* skip backslash-escaped character — don't count brackets */
+                continue;
+            }
+            if (s[pos] == '(') { depth++; pos++; continue; }
+            if (s[pos] == ')') { if (!depth) break; depth--; pos++; continue; }
             pos++;
         }
         href_e = pos;

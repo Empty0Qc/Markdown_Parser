@@ -35,6 +35,8 @@ struct MkParser {
     MkDelta      *dq_head;     /* next to dequeue */
     MkDelta      *dq_tail;     /* last enqueued   */
 
+    int           finished;    /* 1 after mk_finish has been called (idempotent guard) */
+
     /* Plugin slots (M7 fills these in) */
     const MkParserPlugin    *parser_plugins[16];
     const MkTransformPlugin *transform_plugins[16];
@@ -134,6 +136,9 @@ MkParser *mk_parser_new(MkArena *arena, const MkCallbacks *callbacks) {
 
 void mk_parser_free(MkParser *p) {
     if (!p) return;
+    /* Flush any pending open blocks — safe to call even if mk_finish was
+     * already called (finished flag prevents double close). */
+    if (!p->finished) mk_finish(p);
     mk_block_cleanup(&p->bp);
     /* Drain and free any unconsumed deltas */
     MkDelta *d = p->dq_head;
@@ -156,6 +161,8 @@ int mk_feed(MkParser *p, const char *data, size_t len) {
 
 int mk_finish(MkParser *p) {
     if (!p) return -1;
+    if (p->finished) return 0;   /* idempotent: no-op if already finished */
+    p->finished = 1;
     return mk_block_finish(&p->bp);
 }
 

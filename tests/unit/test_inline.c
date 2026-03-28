@@ -230,6 +230,59 @@ static void test_link_with_title(void) {
     PASS("link_with_title");
 }
 
+/* [F15] Link dest with backslash-escaped parentheses.
+ * [link](\(foo\)) — href should be \(foo\), NOT misparse as [link]( */
+static char g_captured_href[256];
+static void capture_link_href(void *ud, MkNode *n) {
+    (void)ud;
+    if (n->type == MK_NODE_LINK) {
+        const char *h = mk_node_link_href(n);
+        if (h) {
+            size_t l = mk_node_link_href_len(n);
+            if (l >= sizeof(g_captured_href)) l = sizeof(g_captured_href) - 1;
+            memcpy(g_captured_href, h, l);
+            g_captured_href[l] = '\0';
+        }
+    }
+}
+
+static void test_link_escaped_parens(void) {
+    g_captured_href[0] = '\0';
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = {
+        .user_data    = NULL,
+        .on_node_open = capture_link_href,
+    };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, "[link](\\(foo\\))\n", 17);
+    mk_finish(p);
+    mk_parser_free(p);
+    mk_arena_free(a);
+
+    /* href must be \(foo\) — the escaped parens are part of the URL */
+    assert(strcmp(g_captured_href, "\\(foo\\)") == 0);
+    PASS("link_escaped_parens");
+}
+
+/* Balanced unescaped parens in link dest should also work */
+static void test_link_balanced_parens(void) {
+    g_captured_href[0] = '\0';
+    MkArena *a = mk_arena_new();
+    MkCallbacks cbs = {
+        .user_data    = NULL,
+        .on_node_open = capture_link_href,
+    };
+    MkParser *p = mk_parser_new(a, &cbs);
+    mk_feed(p, "[link](foo(bar)baz)\n", 20);
+    mk_finish(p);
+    mk_parser_free(p);
+    mk_arena_free(a);
+
+    /* href must be foo(bar)baz — balanced parens included */
+    assert(strcmp(g_captured_href, "foo(bar)baz") == 0);
+    PASS("link_balanced_parens");
+}
+
 /* ── main ─────────────────────────────────────────────────────────────────── */
 
 int main(void) {
@@ -252,6 +305,8 @@ int main(void) {
     test_nested_em_strong();
     test_code_span_multiple_backticks();
     test_link_with_title();
+    test_link_escaped_parens();
+    test_link_balanced_parens();
     printf("All inline tests passed.\n\n");
     return 0;
 }
