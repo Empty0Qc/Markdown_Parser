@@ -380,6 +380,13 @@ Open `demo/web/index.html` in any modern browser — no build step required.
 - **Preview tab** — rendered HTML with streaming typewriter effect
 - Speed slider controls chunk delay (1–100 ms)
 - Five built-in GFM samples; edit the left pane to parse arbitrary Markdown
+- Built-in **LLM panel**: mock/offline + OpenAI-compatible streaming
+- **A/B compare mode** with side-by-side previews, per-pane metrics, and optional sync scroll
+- **Fault injection** modes (deterministic and probabilistic) for streaming robustness testing
+- **Fuzz harness** with baseline diff, JSON export/import, and per-run replay
+- Click an event row or AST node to highlight the corresponding source range in the editor
+- Performance stats: tokens, TTFT, tokens/s, average tick latency, elapsed time
+- UI language toggle (**EN / 中文**). Event payloads and AST node type names remain raw/original
 
 ---
 
