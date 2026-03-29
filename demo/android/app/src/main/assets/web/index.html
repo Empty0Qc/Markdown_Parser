@@ -841,6 +841,9 @@ class DemoParser {
     // Simple regex-based inline parser
     let i = 0;
     const len = text.length;
+    const isAutoLink = (inner) =>
+      /^(https?:\/\/|mailto:|ftp:\/\/)/i.test(inner) ||
+      /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(inner);
 
     const flush = (s) => {
       if (!s) return;
@@ -873,12 +876,20 @@ class DemoParser {
         const end = text.indexOf('>', i+1);
         if (end !== -1) {
           const inner = text.slice(i+1, end);
-          const isEmail = inner.includes('@');
           flush(buf); buf = '';
-          const node = { type: NodeType.AUTO_LINK, flags: 0, url: inner, isEmail };
-          this.#cb.onNodeOpen?.(NodeType.AUTO_LINK, node);
-          this.#cb.onText?.(inner);
-          this.#cb.onNodeClose?.(NodeType.AUTO_LINK, node);
+          if (isAutoLink(inner)) {
+            const isEmail = /^[A-Za-z0-9._%+-]+@/.test(inner);
+            const node = { type: NodeType.AUTO_LINK, flags: 0, url: inner, isEmail };
+            this.#cb.onNodeOpen?.(NodeType.AUTO_LINK, node);
+            this.#cb.onText?.(inner);
+            this.#cb.onNodeClose?.(NodeType.AUTO_LINK, node);
+          } else {
+            const raw = text.slice(i, end + 1);
+            const node = { type: NodeType.HTML_INLINE, flags: 0, raw };
+            this.#cb.onNodeOpen?.(NodeType.HTML_INLINE, node);
+            this.#cb.onText?.(raw);
+            this.#cb.onNodeClose?.(NodeType.HTML_INLINE, node);
+          }
           i = end + 1; continue;
         }
       }

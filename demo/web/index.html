@@ -945,7 +945,7 @@ function renderHTMLPreview(markdown) {
         stack.push(null); return;
       }
       if (type === NodeType.HTML_BLOCK || type === NodeType.HTML_INLINE) {
-        stack.push(null); return;
+        stack.push('html_raw'); return;
       }
       if (type === NodeType.SOFT_BREAK) { htmlChunks.push(' '); stack.push(null); return; }
       if (type === NodeType.HARD_BREAK) { htmlChunks.push('<br>'); stack.push(null); return; }
@@ -969,13 +969,14 @@ function renderHTMLPreview(markdown) {
       const tag = stack.pop();
       if (!tag) return;
       if (tag === 'code_block') { htmlChunks.push('</code></pre>'); return; }
+      if (tag === 'html_raw') return;
       if (tag === 'div') return; // document wrapper
       closeTag(tag);
     },
     onText(text) {
       const top = stack[stack.length - 1];
       if (top === 'code_block') { htmlChunks.push(escHTML(text)); return; }
-      // Don't output raw text if this is inside an HTML block
+      if (top === 'html_raw')   { htmlChunks.push(escHTML(text)); return; }
       htmlChunks.push(escHTML(text));
     },
     onModify(type, node) {
@@ -1218,6 +1219,9 @@ class DemoParser {
     // Simple regex-based inline parser
     let i = 0;
     const len = text.length;
+    const isAutoLink = (inner) =>
+      /^(https?:\/\/|mailto:|ftp:\/\/)/i.test(inner) ||
+      /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(inner);
 
     const flush = (s) => {
       if (!s) return;
@@ -1250,12 +1254,20 @@ class DemoParser {
         const end = text.indexOf('>', i+1);
         if (end !== -1) {
           const inner = text.slice(i+1, end);
-          const isEmail = inner.includes('@');
           flush(buf); buf = '';
-          const node = { type: NodeType.AUTO_LINK, flags: 0, url: inner, isEmail };
-          this.#cb.onNodeOpen?.(NodeType.AUTO_LINK, node);
-          this.#cb.onText?.(inner);
-          this.#cb.onNodeClose?.(NodeType.AUTO_LINK, node);
+          if (isAutoLink(inner)) {
+            const isEmail = /^[A-Za-z0-9._%+-]+@/.test(inner);
+            const node = { type: NodeType.AUTO_LINK, flags: 0, url: inner, isEmail };
+            this.#cb.onNodeOpen?.(NodeType.AUTO_LINK, node);
+            this.#cb.onText?.(inner);
+            this.#cb.onNodeClose?.(NodeType.AUTO_LINK, node);
+          } else {
+            const raw = text.slice(i, end + 1);
+            const node = { type: NodeType.HTML_INLINE, flags: 0, raw };
+            this.#cb.onNodeOpen?.(NodeType.HTML_INLINE, node);
+            this.#cb.onText?.(raw);
+            this.#cb.onNodeClose?.(NodeType.HTML_INLINE, node);
+          }
           i = end + 1; continue;
         }
       }

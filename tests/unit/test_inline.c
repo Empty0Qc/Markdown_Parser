@@ -91,6 +91,14 @@ static int count_open(const EventLog *log, MkNodeType t) {
     return n;
 }
 
+static int count_text_type(const EventLog *log, MkNodeType t) {
+    int n = 0;
+    for (int i = 0; i < log->count; i++)
+        if (log->events[i].kind == EV_TEXT && log->events[i].node_type == t)
+            n++;
+    return n;
+}
+
 /* Check if any TEXT event contains the given substring */
 static int text_contains(const EventLog *log, const char *sub) {
     for (int i = 0; i < log->count; i++)
@@ -182,6 +190,8 @@ static void test_html_inline(void) {
     EventLog log = {.count = 0};
     parse_full("text <em>html</em> text\n", &log);
     assert(find_open(&log, MK_NODE_HTML_INLINE) >= 0);
+    assert(count_text_type(&log, MK_NODE_HTML_INLINE) > 0);
+    assert(text_contains(&log, "<em>"));
     PASS("html_inline");
 }
 

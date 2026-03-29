@@ -318,12 +318,19 @@ static void jni_on_open(void *ud, MkNode *n) {
             }
             break;
         }
-        case MK_NODE_LINK:
-        case MK_NODE_AUTO_LINK: {
+        case MK_NODE_LINK: {
             size_t len = mk_node_link_href_len(n);
             if (len > 0) {
                 const char *href = mk_node_link_href(n);
                 if (href) jattr = jstring_from_slice(env, href, len);
+            }
+            break;
+        }
+        case MK_NODE_AUTO_LINK: {
+            size_t len = mk_node_autolink_url_len(n);
+            if (len > 0) {
+                const char *url = mk_node_autolink_url(n);
+                if (url) jattr = jstring_from_slice(env, url, len);
             }
             break;
         }

@@ -337,6 +337,9 @@ emit_html_inline:;
     h->raw_len = p - pos;
     mk_node_append_child(parent, &h->base);
     iemit_open (ip, &h->base);
+    /* Keep push-event contract consistent with HTML_BLOCK:
+     * consumers that only listen to on_text should still receive raw HTML. */
+    iemit_text (ip, &h->base, h->raw, h->raw_len);
     iemit_close(ip, &h->base);
     return p;
 }
@@ -685,6 +688,12 @@ static void inline_walk(const MkCallbacks *cbs, MkNode *n) {
         MkInlineCodeNode *ic = (MkInlineCodeNode *)n;
         if (cbs->on_text && ic->text)
             cbs->on_text(cbs->user_data, n, ic->text, ic->text_len);
+        break;
+    }
+    case MK_NODE_HTML_INLINE: {
+        MkHtmlInlineNode *hi = (MkHtmlInlineNode *)n;
+        if (cbs->on_text && hi->raw)
+            cbs->on_text(cbs->user_data, n, hi->raw, hi->raw_len);
         break;
     }
     default:
