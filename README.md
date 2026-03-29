@@ -411,6 +411,9 @@ ctest --test-dir build --output-on-failure
 
 ## Milestone status
 
+Progress: 17/17 complete (100%)
+`██████████ 100%`
+
 | Milestone | Status |
 |---|---|
 | M1 Project skeleton & build system | ✅ |
