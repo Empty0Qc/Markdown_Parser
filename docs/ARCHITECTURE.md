@@ -122,7 +122,7 @@ try parser.feed("# 你好\n").finish()
 
 ## 第三层：Demo 应用（demo/）
 
-### Web Demo（demo/web/index.html，1192 行，零依赖）
+### Web Demo（demo/web/index.html，零依赖）
 
 直接浏览器打开，无需任何构建步骤：
 
@@ -130,7 +130,14 @@ try parser.feed("# 你好\n").finish()
 - **AST 面板**：可交互彩色节点树，显示 level/lang/href 等属性
 - **Preview 面板**：流式 HTML 渲染，打字机动效 + 闪烁光标
 - Speed 滑块控制 chunk 延迟（1–100 ms），慢速下可直观感受增量解析
-- 5 个内置 GFM 样本（GFM Showcase / AI Streaming / Tables / Nesting / Links）
+- 5 个内置样本（All 25 Node Types / AI Streaming Sim / Tables & Alignment / Nested Structures / Links, Images & Auto-links）
+- 内置 **LLM 配置区**：Mock/offline + OpenAI-compatible 流式输出
+- 支持 **A/B 对比模式**：双栏预览、分栏性能指标、可选同步滚动
+- 支持 **故障注入**：确定性模式 + 概率模式（延迟/断流/异常 token）
+- 支持 **Fuzz 回归链路**：基线对比、JSON 导出/导入、按 run 回放
+- 点击事件行或 AST 节点可高亮定位左侧编辑器中的对应源码区间
+- 内置性能指标：tokens、TTFT、tokens/s、平均 tick 延迟、总耗时
+- 支持界面 **中英文切换（EN / 中文）**，事件负载与 AST 节点类型保持原始内容
 
 ### Android Demo（demo/android/，Jetpack Compose）
 
