@@ -77,6 +77,7 @@
   #event-stream { flex: 1; padding: 10px; font-family: var(--font-mono); font-size: 12px;
                   overflow-y: auto; }
   .ev { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; border-bottom: 1px solid #ffffff08; }
+  .ev.selected { background: #58a6ff22; }
   .ev-idx  { color: var(--muted); min-width: 32px; text-align: right; font-size: 11px; }
   .ev-kind { min-width: 60px; font-weight: 600; font-size: 11px; }
   .ev-kind.open   { color: var(--accent2); }
@@ -93,6 +94,7 @@
   .tree-node-label { display: flex; gap: 6px; align-items: baseline;
                      padding: 1px 4px; border-radius: 4px; cursor: default; }
   .tree-node-label:hover { background: var(--surface2); }
+  .tree-node-label.selected { background: #58a6ff22; }
   .tn-type  { font-weight: 600; }
   .tn-text  { color: var(--muted); font-size: 11px; max-width: 260px;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -146,6 +148,84 @@
 
   /* Speed slider */
   input[type=range] { accent-color: var(--accent); width: 80px; }
+
+  .model-config { border-bottom: 1px solid var(--border); background: var(--surface); padding: 10px 14px;
+                  display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+  .model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .model-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .model-field > span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .model-field.full { grid-column: 1 / -1; }
+  .model-field.hidden { display: none; }
+  .model-field input,
+  .model-field textarea,
+  .model-field select {
+    width: 100%;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+  #model-prompt { min-height: 64px; resize: vertical; line-height: 1.45; }
+  .model-actions { display: flex; align-items: center; gap: 8px; }
+  .model-status { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden;
+                  text-overflow: ellipsis; }
+  .model-status.error { color: #ff7b72; }
+  .range-active {
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 0 2px #58a6ff22;
+  }
+  .diff-output {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding: 8px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    min-height: 52px;
+  }
+  .diff-output.error { color: #ff7b72; }
+  .compare-view { display: none; flex: 1; min-height: 0; gap: 0; }
+  .compare-view.show { display: grid; grid-template-columns: 1fr 1fr; }
+  .compare-pane { display: flex; flex-direction: column; min-height: 0; }
+  .compare-pane + .compare-pane { border-left: 1px solid var(--border); }
+  .compare-pane-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+  .compare-pane-body {
+    flex: 1;
+    overflow: auto;
+    padding: 12px 14px;
+    line-height: 1.7;
+  }
+  .compare-pane-metrics {
+    border-top: 1px solid var(--border);
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    font-family: var(--font-mono);
+  }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .panel + .panel { border-left: 0; border-top: 1px solid var(--border); }
+    .compare-view.show { grid-template-columns: 1fr; }
+    .compare-pane + .compare-pane { border-left: 0; border-top: 1px solid var(--border); }
+  }
+  @media (max-width: 760px) {
+    .model-grid { grid-template-columns: 1fr; }
+    header { flex-wrap: wrap; row-gap: 8px; }
+    header > div { width: 100%; justify-content: flex-start; }
+  }
 </style>
 </head>
 <body>
@@ -153,8 +233,9 @@
 <header>
   <h1>mk-parser</h1>
   <span class="badge">WASM</span>
-  <span>Incremental Markdown parser · AI streaming demo</span>
+  <span id="header-subtitle">Incremental Markdown parser · AI streaming demo</span>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+    <button id="lang-toggle">中文</button>
     <select id="sample-select">
       <option value="complete">All 25 Node Types</option>
       <option value="streaming">AI Streaming Sim</option>
@@ -163,6 +244,9 @@
       <option value="links">Links, Images &amp; Auto-links</option>
     </select>
     <button class="primary" id="stream-btn">▶ Stream</button>
+    <button class="primary" id="model-generate-btn">✨ Generate</button>
+    <button id="compare-btn">Compare A/B</button>
+    <button id="fuzz-btn">Fuzz</button>
     <button id="parse-btn">Parse All</button>
     <button id="clear-btn">Clear</button>
   </div>
@@ -172,11 +256,112 @@
   <!-- Left: editor -->
   <div class="panel">
     <div class="panel-header">
-      <label>Input</label>
+      <label id="input-panel-label">Input</label>
       <div class="controls">
-        <span style="font-size:11px;color:var(--muted)">Speed:</span>
+        <span id="speed-caption" style="font-size:11px;color:var(--muted)">Speed:</span>
         <input type="range" id="speed" min="1" max="100" value="40">
         <span id="speed-label" style="font-size:11px;color:var(--muted);min-width:32px">40ms</span>
+      </div>
+    </div>
+    <div class="model-config">
+      <div class="model-grid">
+        <label class="model-field">
+          <span>Provider</span>
+          <select id="provider-select">
+            <option value="mock">Mock (offline)</option>
+            <option value="openai">OpenAI-compatible</option>
+          </select>
+        </label>
+        <label class="model-field provider-only">
+          <span>Model</span>
+          <input id="model-name" type="text" value="gpt-4o-mini" placeholder="gpt-4o-mini / llama3.2 / ...">
+        </label>
+        <label class="model-field provider-only">
+          <span>Base URL</span>
+          <input id="base-url" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="model-field provider-only">
+          <span>API Key</span>
+          <input id="api-key" type="password" value="" placeholder="sk-... (or ollama)">
+        </label>
+        <label class="model-field provider-only">
+          <span>Max Tokens</span>
+          <input id="max-tokens" type="number" min="1" max="8192" value="512">
+        </label>
+        <label class="model-field">
+          <span>Fault Mode</span>
+          <select id="fault-mode">
+            <option value="none">None</option>
+            <option value="latency">Latency jitter</option>
+            <option value="disconnect">Mid-stream disconnect</option>
+            <option value="half_packet">Half-packet stop</option>
+            <option value="invalid_token">Invalid token insert</option>
+            <option value="prob_jitter">Probabilistic jitter</option>
+            <option value="prob_disconnect">Probabilistic disconnect</option>
+            <option value="prob_invalid">Probabilistic invalid token</option>
+          </select>
+        </label>
+        <label class="model-field">
+          <span>Fault After Tokens</span>
+          <input id="fault-after" type="number" min="1" max="99999" value="120">
+        </label>
+        <label class="model-field">
+          <span>Fault Probability %</span>
+          <input id="fault-prob" type="number" min="0" max="100" value="10">
+        </label>
+        <label class="model-field provider-only full">
+          <span>System Prompt</span>
+          <input id="system-prompt" type="text" value="You are a helpful assistant. Reply using Markdown formatting.">
+        </label>
+        <label class="model-field full">
+          <span>Prompt</span>
+          <textarea id="model-prompt" placeholder="Write a short Markdown essay about incremental parsing.">Write a short Markdown essay about incremental parsing in AI streaming systems.</textarea>
+        </label>
+        <label class="model-field">
+          <span>Fuzz Runs</span>
+          <input id="fuzz-runs" type="number" min="1" max="200" value="20">
+        </label>
+        <label class="model-field">
+          <span>Chunk Min</span>
+          <input id="fuzz-chunk-min" type="number" min="1" max="128" value="1">
+        </label>
+        <label class="model-field">
+          <span>Chunk Max</span>
+          <input id="fuzz-chunk-max" type="number" min="1" max="256" value="12">
+        </label>
+        <label class="model-field">
+          <span>Fuzz Delay Max (ms)</span>
+          <input id="fuzz-delay-max" type="number" min="0" max="200" value="0">
+        </label>
+        <label class="model-field">
+          <span>B Provider</span>
+          <select id="provider-select-b">
+            <option value="mock">Mock (offline)</option>
+            <option value="openai">OpenAI-compatible</option>
+          </select>
+        </label>
+        <label class="model-field provider-only-b">
+          <span>B Model</span>
+          <input id="model-name-b" type="text" value="gpt-4o-mini" placeholder="gpt-4o-mini / llama3.2 / ...">
+        </label>
+        <label class="model-field provider-only-b">
+          <span>B Base URL</span>
+          <input id="base-url-b" type="text" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="model-field provider-only-b">
+          <span>B API Key</span>
+          <input id="api-key-b" type="password" value="" placeholder="sk-... (or ollama)">
+        </label>
+        <label class="model-field">
+          <span>Compare Sync Scroll</span>
+          <select id="compare-sync-scroll">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+      </div>
+      <div class="model-actions">
+        <span id="model-status" class="model-status">Idle</span>
       </div>
     </div>
     <textarea id="editor" spellcheck="false"></textarea>
@@ -192,12 +377,20 @@
 
     <div class="tab-content show" id="tab-events">
       <div class="panel-header">
-        <label>Event stream</label>
+        <label id="events-panel-label">Event stream</label>
         <div class="controls">
           <button id="clear-events-btn" style="font-size:11px">Clear</button>
+          <button id="set-baseline-btn" style="font-size:11px">Set Baseline</button>
+          <button id="diff-baseline-btn" style="font-size:11px">Diff Baseline</button>
+          <button id="export-fuzz-btn" style="font-size:11px">Export Fuzz JSON</button>
+          <button id="import-fuzz-btn" style="font-size:11px">Import Fuzz JSON</button>
+          <input id="replay-run-input" type="number" min="1" value="1" style="width:64px;font-size:11px;padding:3px 6px;">
+          <button id="replay-fuzz-btn" style="font-size:11px">Replay Run</button>
         </div>
       </div>
       <div id="event-stream"></div>
+      <div id="diff-output" class="diff-output">Diff: baseline not set.</div>
+      <input id="import-fuzz-file" type="file" accept="application/json" style="display:none;">
     </div>
 
     <div class="tab-content" id="tab-ast">
@@ -206,15 +399,31 @@
     </div>
 
     <div class="tab-content" id="tab-preview">
-      <div class="panel-header"><label>Preview</label></div>
+      <div class="panel-header"><label id="preview-panel-label">Preview</label></div>
       <div id="preview"></div>
+      <div id="compare-view" class="compare-view">
+        <div class="compare-pane">
+          <div class="compare-pane-header" id="compare-label-a">Model A</div>
+          <div class="compare-pane-body" id="compare-preview-a"></div>
+          <div class="compare-pane-metrics" id="compare-metrics-a">Idle</div>
+        </div>
+        <div class="compare-pane">
+          <div class="compare-pane-header" id="compare-label-b">Model B</div>
+          <div class="compare-pane-body" id="compare-preview-b"></div>
+          <div class="compare-pane-metrics" id="compare-metrics-b">Idle</div>
+        </div>
+      </div>
     </div>
 
     <div class="stats-bar">
-      <div>Events: <span id="stat-events">0</span></div>
-      <div>Nodes: <span id="stat-nodes">0</span></div>
-      <div>Chars fed: <span id="stat-chars">0</span></div>
-      <div>Time: <span id="stat-time">0ms</span></div>
+      <div><span id="stat-label-events">Events</span>: <span id="stat-events">0</span></div>
+      <div><span id="stat-label-nodes">Nodes</span>: <span id="stat-nodes">0</span></div>
+      <div><span id="stat-label-chars">Chars fed</span>: <span id="stat-chars">0</span></div>
+      <div><span id="stat-label-tokens">Tokens</span>: <span id="stat-tokens">0</span></div>
+      <div><span id="stat-label-ttft">TTFT</span>: <span id="stat-ttft">-</span></div>
+      <div><span id="stat-label-tps">Tokens/s</span>: <span id="stat-tps">-</span></div>
+      <div><span id="stat-label-tick">Tick avg</span>: <span id="stat-tick">-</span></div>
+      <div><span id="stat-label-time">Time</span>: <span id="stat-time">0ms</span></div>
     </div>
   </div>
 </div>
@@ -766,6 +975,12 @@ const $  = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
 const editor       = $('#editor');
+const langToggleBtn= $('#lang-toggle');
+const headerSubtitle = $('#header-subtitle');
+const inputPanelLabel = $('#input-panel-label');
+const speedCaption = $('#speed-caption');
+const eventsPanelLabel = $('#events-panel-label');
+const previewPanelLabel = $('#preview-panel-label');
 const streamBtn    = $('#stream-btn');
 const parseBtn     = $('#parse-btn');
 const clearBtn     = $('#clear-btn');
@@ -776,17 +991,505 @@ const sampleSelect = $('#sample-select');
 const evStream     = $('#event-stream');
 const astTree      = $('#ast-tree');
 const preview      = $('#preview');
+const modelGenerateBtn = $('#model-generate-btn');
+const compareBtn      = $('#compare-btn');
+const fuzzBtn         = $('#fuzz-btn');
+const modelStatus      = $('#model-status');
+const diffOutput       = $('#diff-output');
+const providerSelect   = $('#provider-select');
+const baseUrlInput     = $('#base-url');
+const apiKeyInput      = $('#api-key');
+const modelInput       = $('#model-name');
+const maxTokensInput   = $('#max-tokens');
+const systemPromptInput= $('#system-prompt');
+const modelPromptInput = $('#model-prompt');
+const providerSelectB  = $('#provider-select-b');
+const baseUrlInputB    = $('#base-url-b');
+const apiKeyInputB     = $('#api-key-b');
+const modelInputB      = $('#model-name-b');
+const faultModeInput   = $('#fault-mode');
+const faultAfterInput  = $('#fault-after');
+const faultProbInput   = $('#fault-prob');
+const fuzzRunsInput    = $('#fuzz-runs');
+const fuzzChunkMinInput= $('#fuzz-chunk-min');
+const fuzzChunkMaxInput= $('#fuzz-chunk-max');
+const fuzzDelayMaxInput= $('#fuzz-delay-max');
+const setBaselineBtn   = $('#set-baseline-btn');
+const diffBaselineBtn  = $('#diff-baseline-btn');
+const exportFuzzBtn    = $('#export-fuzz-btn');
+const importFuzzBtn    = $('#import-fuzz-btn');
+const replayRunInput   = $('#replay-run-input');
+const replayFuzzBtn    = $('#replay-fuzz-btn');
+const importFuzzFile   = $('#import-fuzz-file');
+const compareSyncInput = $('#compare-sync-scroll');
+const compareView      = $('#compare-view');
+const comparePreviewA  = $('#compare-preview-a');
+const comparePreviewB  = $('#compare-preview-b');
+const compareMetricsA  = $('#compare-metrics-a');
+const compareMetricsB  = $('#compare-metrics-b');
+const compareLabelA    = $('#compare-label-a');
+const compareLabelB    = $('#compare-label-b');
 
-let statEvents=0, statNodes=0, statChars=0, statTime=0;
+const WEB_MODEL_STORAGE_KEY = 'mk-parser.webmodel.v1';
+const WEB_LANG_STORAGE_KEY = 'mk-parser.webdemo.lang.v1';
+const I18N = {
+  en: {
+    langToggle: '中文',
+    page_title: 'mk-parser — Live Demo',
+    headerSubtitle: 'Incremental Markdown parser · AI streaming demo',
+    sample_complete: 'All 25 Node Types',
+    sample_streaming: 'AI Streaming Sim',
+    sample_tables: 'Tables & Alignment',
+    sample_nesting: 'Nested Structures',
+    sample_links: 'Links, Images & Auto-links',
+    btn_stream_start: '▶ Stream',
+    btn_stream_stop: '■ Stop',
+    btn_generate_start: '✨ Generate',
+    btn_generate_stop: '■ Stop',
+    btn_compare_start: 'Compare A/B',
+    btn_compare_stop: '■ Stop',
+    btn_fuzz_start: 'Fuzz',
+    btn_fuzz_stop: '■ Stop',
+    btn_replay_start: 'Replay Run',
+    btn_replay_stop: '■ Stop',
+    btn_parse: 'Parse All',
+    btn_clear: 'Clear',
+    input_label: 'Input',
+    speed_label: 'Speed:',
+    field_provider: 'Provider',
+    field_model: 'Model',
+    field_base_url: 'Base URL',
+    field_api_key: 'API Key',
+    field_max_tokens: 'Max Tokens',
+    field_fault_mode: 'Fault Mode',
+    field_fault_after: 'Fault After Tokens',
+    field_fault_prob: 'Fault Probability %',
+    field_system_prompt: 'System Prompt',
+    field_prompt: 'Prompt',
+    field_fuzz_runs: 'Fuzz Runs',
+    field_chunk_min: 'Chunk Min',
+    field_chunk_max: 'Chunk Max',
+    field_fuzz_delay: 'Fuzz Delay Max (ms)',
+    field_b_provider: 'B Provider',
+    field_b_model: 'B Model',
+    field_b_base_url: 'B Base URL',
+    field_b_api_key: 'B API Key',
+    field_compare_sync: 'Compare Sync Scroll',
+    placeholder_model: 'gpt-4o-mini / llama3.2 / ...',
+    placeholder_api: 'sk-... (or ollama)',
+    placeholder_baseurl: 'https://api.openai.com/v1',
+    placeholder_system: 'You are a helpful assistant. Reply using Markdown formatting.',
+    placeholder_prompt: 'Write a short Markdown essay about incremental parsing.',
+    default_system_prompt: 'You are a helpful assistant. Reply using Markdown formatting.',
+    default_prompt: 'Write a short Markdown essay about incremental parsing in AI streaming systems.',
+    option_provider_mock: 'Mock (offline)',
+    option_provider_openai: 'OpenAI-compatible',
+    option_fault_none: 'None',
+    option_fault_latency: 'Latency jitter',
+    option_fault_disconnect: 'Mid-stream disconnect',
+    option_fault_half_packet: 'Half-packet stop',
+    option_fault_invalid_token: 'Invalid token insert',
+    option_fault_prob_jitter: 'Probabilistic jitter',
+    option_fault_prob_disconnect: 'Probabilistic disconnect',
+    option_fault_prob_invalid: 'Probabilistic invalid token',
+    option_sync_on: 'On',
+    option_sync_off: 'Off',
+    events_panel_label: 'Event stream',
+    btn_clear_events: 'Clear',
+    btn_set_baseline: 'Set Baseline',
+    btn_diff_baseline: 'Diff Baseline',
+    btn_export_fuzz: 'Export Fuzz JSON',
+    btn_import_fuzz: 'Import Fuzz JSON',
+    diff_default: 'Diff: baseline not set.',
+    preview_label: 'Preview',
+    compare_label_a_prefix: 'A',
+    compare_label_b_prefix: 'B',
+    metrics_idle: 'idle',
+    status_idle: 'Idle',
+    stat_events: 'Events',
+    stat_nodes: 'Nodes',
+    stat_chars: 'Chars fed',
+    stat_tokens: 'Tokens',
+    stat_ttft: 'TTFT',
+    stat_tps: 'Tokens/s',
+    stat_tick: 'Tick avg',
+    stat_time: 'Time',
+    status_stopping: 'Stopping...',
+    status_prompt_empty: 'Prompt is empty.',
+    status_generating_mock: 'Generating with mock provider...',
+    status_streaming_from: 'Streaming from {baseUrl} ({model})...',
+    status_stopped: 'Stopped.',
+    status_done_with_chars: 'Done · {chars} chars parsed · {perf}.',
+    status_running_compare: 'Running A/B compare...',
+    status_stopping_compare: 'Stopping compare...',
+    status_compare_stopped: 'Compare stopped.',
+    status_compare_done: 'Compare done · A({a}) · B({b})',
+    status_compare_error: 'Compare finished with errors · {left} · {right}',
+    status_injected_fault: '[Injected fault:{mode}] {detail} · {perf}.',
+    err_injected_fault: '[Injected fault:{mode}] {detail}',
+    err_injected_fault_simple: '[Injected fault] {detail}',
+    err_provider: '[Provider error] {detail}',
+    metric_error: 'error: {detail}',
+    metric_done: 'done · {summary}',
+    metric_fault: 'fault:{mode} · {summary}',
+    metric_starting: 'starting...',
+    perf_summary: 'tokens={tokens} · ttft={ttft} · tps={tps} · tick={tick} · total={total}ms',
+    diff_none: 'Diff: no mismatch.',
+    diff_mismatch: 'Diff mismatch @{index}\nexpected: {expected}\nactual:   {actual}',
+    baseline_set: 'Baseline set ({events} events).',
+    fuzz_report_empty: 'Fuzz report is empty. Run Fuzz first.',
+    fuzz_report_exported: 'Fuzz report exported ({runs} runs).',
+    fuzz_imported: 'Imported fuzz report with {runs} runs.',
+    replay_no_report: 'No fuzz report available. Import one or run Fuzz first.',
+    replay_run_missing: 'Replay failed: run {run} not found.',
+    replay_chunks_missing: 'Replay failed: run {run} has no chunkSizes data.',
+    replay_stopping: 'Replay stopping...',
+    replay_summary: 'Replay run {run}/{total}\nchunks={chunks}\n{diff}',
+    fuzz_editor_empty: 'Fuzz: editor is empty.',
+    fuzz_stopping: 'Fuzz stopping...',
+    fuzz_progress: 'Fuzz running {run}/{runs}\nbaseline events={baseline}\nmismatches={mismatches}',
+    fuzz_stopped: 'Fuzz stopped by user.',
+    fuzz_done_ok: 'Fuzz done ({runs} runs): no mismatch. baseline={baseline} events.',
+    fuzz_done_bad: 'Fuzz done ({runs} runs): mismatches={mismatches}\nfirst mismatch run={firstRun} chunks={chunks}\n{diff}',
+    diff_skipped_on_error: 'A/B output diff skipped because one side failed.',
+    diff_ab_identical: 'A/B output diff: identical output.',
+    diff_ab_summary: 'A/B output diff:\nfirst mismatch offset={offset}\nA len={aLen} | B len={bLen}\nA: "{aSnippet}"\nB: "{bSnippet}"',
+    import_failed: 'Import failed: {detail}',
+    run_ok: 'ok',
+  },
+  zh: {
+    langToggle: 'EN',
+    page_title: 'mk-parser — 在线演示',
+    headerSubtitle: '增量 Markdown 解析器 · AI 流式演示',
+    sample_complete: '全部 25 种节点',
+    sample_streaming: 'AI 流式模拟',
+    sample_tables: '表格与对齐',
+    sample_nesting: '嵌套结构',
+    sample_links: '链接、图片与自动链接',
+    btn_stream_start: '▶ 流式',
+    btn_stream_stop: '■ 停止',
+    btn_generate_start: '✨ 生成',
+    btn_generate_stop: '■ 停止',
+    btn_compare_start: 'A/B 对比',
+    btn_compare_stop: '■ 停止',
+    btn_fuzz_start: 'Fuzz 测试',
+    btn_fuzz_stop: '■ 停止',
+    btn_replay_start: '回放 Run',
+    btn_replay_stop: '■ 停止',
+    btn_parse: '全量解析',
+    btn_clear: '清空',
+    input_label: '输入',
+    speed_label: '速度:',
+    field_provider: '提供方',
+    field_model: '模型',
+    field_base_url: '基础地址',
+    field_api_key: 'API Key',
+    field_max_tokens: '最大 Tokens',
+    field_fault_mode: '故障模式',
+    field_fault_after: '故障触发 Token',
+    field_fault_prob: '故障概率 %',
+    field_system_prompt: '系统提示词',
+    field_prompt: '提示词',
+    field_fuzz_runs: 'Fuzz 轮数',
+    field_chunk_min: 'Chunk 最小值',
+    field_chunk_max: 'Chunk 最大值',
+    field_fuzz_delay: 'Fuzz 最大延迟(ms)',
+    field_b_provider: 'B 提供方',
+    field_b_model: 'B 模型',
+    field_b_base_url: 'B 基础地址',
+    field_b_api_key: 'B API Key',
+    field_compare_sync: '对比同步滚动',
+    placeholder_model: 'gpt-4o-mini / llama3.2 / ...',
+    placeholder_api: 'sk-...（或 ollama）',
+    placeholder_baseurl: 'https://api.openai.com/v1',
+    placeholder_system: '你是一个有帮助的助手。请使用 Markdown 格式回复。',
+    placeholder_prompt: '写一段关于增量解析的 Markdown 短文。',
+    default_system_prompt: '你是一个有帮助的助手。请使用 Markdown 格式回复。',
+    default_prompt: '请写一段关于 AI 流式系统中增量解析的 Markdown 短文。',
+    option_provider_mock: 'Mock（离线）',
+    option_provider_openai: 'OpenAI 兼容',
+    option_fault_none: '无',
+    option_fault_latency: '延迟抖动',
+    option_fault_disconnect: '中途断流',
+    option_fault_half_packet: '半包中止',
+    option_fault_invalid_token: '插入异常 token',
+    option_fault_prob_jitter: '概率延迟抖动',
+    option_fault_prob_disconnect: '概率断流',
+    option_fault_prob_invalid: '概率异常 token',
+    option_sync_on: '开',
+    option_sync_off: '关',
+    events_panel_label: 'Event stream',
+    btn_clear_events: '清空',
+    btn_set_baseline: '设为基线',
+    btn_diff_baseline: '对比基线',
+    btn_export_fuzz: '导出 Fuzz JSON',
+    btn_import_fuzz: '导入 Fuzz JSON',
+    diff_default: 'Diff：尚未设置基线。',
+    preview_label: '预览',
+    compare_label_a_prefix: '模型A',
+    compare_label_b_prefix: '模型B',
+    metrics_idle: '空闲',
+    status_idle: '空闲',
+    stat_events: 'Events',
+    stat_nodes: '节点',
+    stat_chars: '输入字符',
+    stat_tokens: 'Tokens',
+    stat_ttft: 'TTFT',
+    stat_tps: 'Tokens/s',
+    stat_tick: '平均 Tick',
+    stat_time: '耗时',
+    status_stopping: '正在停止...',
+    status_prompt_empty: '提示词为空。',
+    status_generating_mock: '正在使用 Mock 提供方生成...',
+    status_streaming_from: '正在从 {baseUrl}（{model}）流式读取...',
+    status_stopped: '已停止。',
+    status_done_with_chars: '完成 · 已解析 {chars} 字符 · {perf}。',
+    status_running_compare: '正在执行 A/B 对比...',
+    status_stopping_compare: '正在停止对比...',
+    status_compare_stopped: '对比已停止。',
+    status_compare_done: '对比完成 · A({a}) · B({b})',
+    status_compare_error: '对比结束但有错误 · {left} · {right}',
+    status_injected_fault: '[注入故障:{mode}] {detail} · {perf}。',
+    err_injected_fault: '[注入故障:{mode}] {detail}',
+    err_injected_fault_simple: '[注入故障] {detail}',
+    err_provider: '[提供方错误] {detail}',
+    metric_error: '错误: {detail}',
+    metric_done: '完成 · {summary}',
+    metric_fault: '故障:{mode} · {summary}',
+    metric_starting: '启动中...',
+    perf_summary: 'tokens={tokens} · ttft={ttft} · tps={tps} · tick={tick} · 总耗时={total}ms',
+    diff_none: 'Diff：无差异。',
+    diff_mismatch: 'Diff 在 @{index} 处不一致\n期望: {expected}\n实际:   {actual}',
+    baseline_set: '已设置基线（{events} 条事件）。',
+    fuzz_report_empty: 'Fuzz 报告为空，请先运行 Fuzz。',
+    fuzz_report_exported: '已导出 Fuzz 报告（{runs} 轮）。',
+    fuzz_imported: '已导入 Fuzz 报告，共 {runs} 轮。',
+    replay_no_report: '没有可用的 Fuzz 报告，请先导入或运行 Fuzz。',
+    replay_run_missing: '回放失败：未找到 run {run}。',
+    replay_chunks_missing: '回放失败：run {run} 没有 chunkSizes 数据。',
+    replay_stopping: '正在停止回放...',
+    replay_summary: '回放 run {run}/{total}\nchunks={chunks}\n{diff}',
+    fuzz_editor_empty: 'Fuzz：编辑器为空。',
+    fuzz_stopping: 'Fuzz 正在停止...',
+    fuzz_progress: 'Fuzz 进行中 {run}/{runs}\n基线事件={baseline}\n不一致={mismatches}',
+    fuzz_stopped: 'Fuzz 已停止。',
+    fuzz_done_ok: 'Fuzz 完成（{runs} 轮）：无不一致。基线={baseline} 条事件。',
+    fuzz_done_bad: 'Fuzz 完成（{runs} 轮）：不一致={mismatches}\n首次不一致 run={firstRun} chunks={chunks}\n{diff}',
+    diff_skipped_on_error: 'A/B 输出差异已跳过，因为有一侧失败。',
+    diff_ab_identical: 'A/B 输出差异：两侧完全一致。',
+    diff_ab_summary: 'A/B 输出差异：\n首个差异偏移={offset}\nA 长度={aLen} | B 长度={bLen}\nA: "{aSnippet}"\nB: "{bSnippet}"',
+    import_failed: '导入失败：{detail}',
+    run_ok: '正常',
+  },
+};
+let currentLang = (localStorage.getItem(WEB_LANG_STORAGE_KEY) === 'zh') ? 'zh' : 'en';
+
+function t(key, vars = {}) {
+  const table = I18N[currentLang] || I18N.en;
+  const fallback = I18N.en[key] ?? key;
+  const template = table[key] ?? fallback;
+  return template.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? `{${name}}`));
+}
+
+function setSelectOptionText(selectEl, value, text) {
+  const opt = [...selectEl.options].find((o) => o.value === value);
+  if (opt) opt.textContent = text;
+}
+
+function setFieldLabelByInputId(inputId, text) {
+  const input = document.getElementById(inputId);
+  const label = input?.closest('.model-field')?.querySelector('span');
+  if (label) label.textContent = text;
+}
+
+function maybeSwitchDefaultPromptValues() {
+  const enSystem = I18N.en.default_system_prompt;
+  const zhSystem = I18N.zh.default_system_prompt;
+  const enPrompt = I18N.en.default_prompt;
+  const zhPrompt = I18N.zh.default_prompt;
+  if ([enSystem, zhSystem].includes(systemPromptInput.value.trim())) {
+    systemPromptInput.value = t('default_system_prompt');
+  }
+  if ([enPrompt, zhPrompt].includes(modelPromptInput.value.trim())) {
+    modelPromptInput.value = t('default_prompt');
+  }
+}
+
+function applyI18n() {
+  document.title = t('page_title');
+  langToggleBtn.textContent = t('langToggle');
+  headerSubtitle.textContent = t('headerSubtitle');
+  inputPanelLabel.textContent = t('input_label');
+  speedCaption.textContent = t('speed_label');
+  eventsPanelLabel.textContent = t('events_panel_label');
+  previewPanelLabel.textContent = t('preview_label');
+
+  const sampleMap = {
+    complete: 'sample_complete',
+    streaming: 'sample_streaming',
+    tables: 'sample_tables',
+    nesting: 'sample_nesting',
+    links: 'sample_links',
+  };
+  [...sampleSelect.options].forEach((opt) => {
+    const key = sampleMap[opt.value];
+    if (key) opt.textContent = t(key);
+  });
+
+  setFieldLabelByInputId('provider-select', t('field_provider'));
+  setFieldLabelByInputId('model-name', t('field_model'));
+  setFieldLabelByInputId('base-url', t('field_base_url'));
+  setFieldLabelByInputId('api-key', t('field_api_key'));
+  setFieldLabelByInputId('max-tokens', t('field_max_tokens'));
+  setFieldLabelByInputId('fault-mode', t('field_fault_mode'));
+  setFieldLabelByInputId('fault-after', t('field_fault_after'));
+  setFieldLabelByInputId('fault-prob', t('field_fault_prob'));
+  setFieldLabelByInputId('system-prompt', t('field_system_prompt'));
+  setFieldLabelByInputId('model-prompt', t('field_prompt'));
+  setFieldLabelByInputId('fuzz-runs', t('field_fuzz_runs'));
+  setFieldLabelByInputId('fuzz-chunk-min', t('field_chunk_min'));
+  setFieldLabelByInputId('fuzz-chunk-max', t('field_chunk_max'));
+  setFieldLabelByInputId('fuzz-delay-max', t('field_fuzz_delay'));
+  setFieldLabelByInputId('provider-select-b', t('field_b_provider'));
+  setFieldLabelByInputId('model-name-b', t('field_b_model'));
+  setFieldLabelByInputId('base-url-b', t('field_b_base_url'));
+  setFieldLabelByInputId('api-key-b', t('field_b_api_key'));
+  setFieldLabelByInputId('compare-sync-scroll', t('field_compare_sync'));
+
+  setSelectOptionText(providerSelect, 'mock', t('option_provider_mock'));
+  setSelectOptionText(providerSelect, 'openai', t('option_provider_openai'));
+  setSelectOptionText(providerSelectB, 'mock', t('option_provider_mock'));
+  setSelectOptionText(providerSelectB, 'openai', t('option_provider_openai'));
+  setSelectOptionText(faultModeInput, 'none', t('option_fault_none'));
+  setSelectOptionText(faultModeInput, 'latency', t('option_fault_latency'));
+  setSelectOptionText(faultModeInput, 'disconnect', t('option_fault_disconnect'));
+  setSelectOptionText(faultModeInput, 'half_packet', t('option_fault_half_packet'));
+  setSelectOptionText(faultModeInput, 'invalid_token', t('option_fault_invalid_token'));
+  setSelectOptionText(faultModeInput, 'prob_jitter', t('option_fault_prob_jitter'));
+  setSelectOptionText(faultModeInput, 'prob_disconnect', t('option_fault_prob_disconnect'));
+  setSelectOptionText(faultModeInput, 'prob_invalid', t('option_fault_prob_invalid'));
+  setSelectOptionText(compareSyncInput, 'on', t('option_sync_on'));
+  setSelectOptionText(compareSyncInput, 'off', t('option_sync_off'));
+
+  modelInput.placeholder = t('placeholder_model');
+  modelInputB.placeholder = t('placeholder_model');
+  baseUrlInput.placeholder = t('placeholder_baseurl');
+  baseUrlInputB.placeholder = t('placeholder_baseurl');
+  apiKeyInput.placeholder = t('placeholder_api');
+  apiKeyInputB.placeholder = t('placeholder_api');
+  systemPromptInput.placeholder = t('placeholder_system');
+  modelPromptInput.placeholder = t('placeholder_prompt');
+  maybeSwitchDefaultPromptValues();
+
+  clearEvtBtn.textContent = t('btn_clear_events');
+  setBaselineBtn.textContent = t('btn_set_baseline');
+  diffBaselineBtn.textContent = t('btn_diff_baseline');
+  exportFuzzBtn.textContent = t('btn_export_fuzz');
+  importFuzzBtn.textContent = t('btn_import_fuzz');
+
+  document.getElementById('stat-label-events').textContent = t('stat_events');
+  document.getElementById('stat-label-nodes').textContent = t('stat_nodes');
+  document.getElementById('stat-label-chars').textContent = t('stat_chars');
+  document.getElementById('stat-label-tokens').textContent = t('stat_tokens');
+  document.getElementById('stat-label-ttft').textContent = t('stat_ttft');
+  document.getElementById('stat-label-tps').textContent = t('stat_tps');
+  document.getElementById('stat-label-tick').textContent = t('stat_tick');
+  document.getElementById('stat-label-time').textContent = t('stat_time');
+
+  if (!activeTask) {
+    setDiffOutput(t('diff_default'));
+    setModelStatus(t('status_idle'));
+  }
+  compareLabelA.textContent = t('compare_label_a_prefix');
+  compareLabelB.textContent = t('compare_label_b_prefix');
+  compareMetricsA.textContent = t('metrics_idle');
+  compareMetricsB.textContent = t('metrics_idle');
+  refreshActionButtons();
+}
+
+function setLanguage(lang) {
+  currentLang = lang === 'zh' ? 'zh' : 'en';
+  localStorage.setItem(WEB_LANG_STORAGE_KEY, currentLang);
+  applyI18n();
+}
+const DEFAULT_WEB_MODEL_CONFIG = {
+  provider: 'mock',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
+  maxTokens: 512,
+  systemPrompt: 'You are a helpful assistant. Reply using Markdown formatting.',
+  prompt: 'Write a short Markdown essay about incremental parsing in AI streaming systems.',
+  faultMode: 'none',
+  faultAfter: 120,
+  faultProbability: 10,
+  fuzzRuns: 20,
+  fuzzChunkMin: 1,
+  fuzzChunkMax: 12,
+  fuzzDelayMax: 0,
+  compareSyncScroll: 'on',
+  compareB: {
+    provider: 'mock',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+  },
+};
+const MOCK_MODEL_RESPONSE = `
+# Streaming Markdown Response
+
+This is a **mock** LLM response streamed token by token.
+
+## Features demonstrated
+
+- Incremental block parsing
+- *Emphasis* and **bold** inline styles
+- \`inline code\` spans
+- Task lists:
+  - [x] Push API works
+  - [x] Pull API works
+  - [ ] Your custom feature
+
+## Code example
+
+\`\`\`javascript
+const parser = new DemoParser({
+  onNodeOpen(type, node) { console.log('open', type, node); },
+  onText(text)           { process.stdout.write(text); },
+});
+parser.feed(chunk).finish();
+\`\`\`
+
+---
+
+*End of mock response.*
+`.trim();
+
+let activeTask = null;
+let debounceTimer;
+let eventBaselineTrace = null;
+let lastFuzzReport = null;
+let importedFuzzReport = null;
+let selectedEventEl = null;
+let selectedAstLabelEl = null;
+let compareSyncLock = false;
+
+let statEvents=0, statNodes=0, statChars=0, statTime=0, statTokens=0;
+let statTTFT='-', statTPS='-', statTick='-';
 function updateStats() {
   $('#stat-events').textContent = statEvents;
   $('#stat-nodes').textContent  = statNodes;
   $('#stat-chars').textContent  = statChars;
+  $('#stat-tokens').textContent = statTokens;
+  $('#stat-ttft').textContent   = statTTFT;
+  $('#stat-tps').textContent    = statTPS;
+  $('#stat-tick').textContent   = statTick;
   $('#stat-time').textContent   = statTime + 'ms';
 }
 
 function resetStats() {
-  statEvents=statNodes=statChars=statTime=0;
+  statEvents=statNodes=statChars=statTime=statTokens=0;
+  statTTFT='-';
+  statTPS='-';
+  statTick='-';
   updateStats();
 }
 
@@ -805,25 +1508,444 @@ speedSlider.addEventListener('input', () => {
   speedLabel.textContent = speedSlider.value + 'ms';
 });
 
+function setModelStatus(text, isError = false) {
+  modelStatus.textContent = text;
+  modelStatus.classList.toggle('error', isError);
+}
+
+function readWebModelConfig() {
+  const maxTokens = parseInt(maxTokensInput.value, 10);
+  const faultAfter = parseInt(faultAfterInput.value, 10);
+  const faultProbability = parseInt(faultProbInput.value, 10);
+  const fuzzRuns = parseInt(fuzzRunsInput.value, 10);
+  const fuzzChunkMin = parseInt(fuzzChunkMinInput.value, 10);
+  const fuzzChunkMax = parseInt(fuzzChunkMaxInput.value, 10);
+  const fuzzDelayMax = parseInt(fuzzDelayMaxInput.value, 10);
+  return {
+    provider: providerSelect.value,
+    baseUrl: baseUrlInput.value.trim() || DEFAULT_WEB_MODEL_CONFIG.baseUrl,
+    apiKey: apiKeyInput.value.trim(),
+    model: modelInput.value.trim() || DEFAULT_WEB_MODEL_CONFIG.model,
+    maxTokens: Number.isFinite(maxTokens) ? Math.max(1, Math.min(8192, maxTokens)) : DEFAULT_WEB_MODEL_CONFIG.maxTokens,
+    systemPrompt: systemPromptInput.value.trim(),
+    prompt: modelPromptInput.value.trim() || DEFAULT_WEB_MODEL_CONFIG.prompt,
+    faultMode: faultModeInput.value || DEFAULT_WEB_MODEL_CONFIG.faultMode,
+    faultAfter: Number.isFinite(faultAfter) ? Math.max(1, faultAfter) : DEFAULT_WEB_MODEL_CONFIG.faultAfter,
+    faultProbability: Number.isFinite(faultProbability)
+      ? Math.max(0, Math.min(100, faultProbability))
+      : DEFAULT_WEB_MODEL_CONFIG.faultProbability,
+    fuzzRuns: Number.isFinite(fuzzRuns) ? Math.max(1, Math.min(200, fuzzRuns)) : DEFAULT_WEB_MODEL_CONFIG.fuzzRuns,
+    fuzzChunkMin: Number.isFinite(fuzzChunkMin) ? Math.max(1, Math.min(128, fuzzChunkMin)) : DEFAULT_WEB_MODEL_CONFIG.fuzzChunkMin,
+    fuzzChunkMax: Number.isFinite(fuzzChunkMax) ? Math.max(1, Math.min(256, fuzzChunkMax)) : DEFAULT_WEB_MODEL_CONFIG.fuzzChunkMax,
+    fuzzDelayMax: Number.isFinite(fuzzDelayMax) ? Math.max(0, Math.min(200, fuzzDelayMax)) : DEFAULT_WEB_MODEL_CONFIG.fuzzDelayMax,
+    compareSyncScroll: compareSyncInput.value || DEFAULT_WEB_MODEL_CONFIG.compareSyncScroll,
+  };
+}
+
+function writeWebModelConfig(config) {
+  providerSelect.value    = config.provider || DEFAULT_WEB_MODEL_CONFIG.provider;
+  baseUrlInput.value      = config.baseUrl || DEFAULT_WEB_MODEL_CONFIG.baseUrl;
+  modelInput.value        = config.model || DEFAULT_WEB_MODEL_CONFIG.model;
+  maxTokensInput.value    = String(config.maxTokens || DEFAULT_WEB_MODEL_CONFIG.maxTokens);
+  systemPromptInput.value = config.systemPrompt ?? DEFAULT_WEB_MODEL_CONFIG.systemPrompt;
+  modelPromptInput.value  = config.prompt ?? DEFAULT_WEB_MODEL_CONFIG.prompt;
+  faultModeInput.value    = config.faultMode || DEFAULT_WEB_MODEL_CONFIG.faultMode;
+  faultAfterInput.value   = String(config.faultAfter || DEFAULT_WEB_MODEL_CONFIG.faultAfter);
+  faultProbInput.value    = String(config.faultProbability ?? DEFAULT_WEB_MODEL_CONFIG.faultProbability);
+  fuzzRunsInput.value     = String(config.fuzzRuns || DEFAULT_WEB_MODEL_CONFIG.fuzzRuns);
+  fuzzChunkMinInput.value = String(config.fuzzChunkMin || DEFAULT_WEB_MODEL_CONFIG.fuzzChunkMin);
+  fuzzChunkMaxInput.value = String(config.fuzzChunkMax || DEFAULT_WEB_MODEL_CONFIG.fuzzChunkMax);
+  fuzzDelayMaxInput.value = String(config.fuzzDelayMax ?? DEFAULT_WEB_MODEL_CONFIG.fuzzDelayMax);
+  compareSyncInput.value  = config.compareSyncScroll || DEFAULT_WEB_MODEL_CONFIG.compareSyncScroll;
+}
+
+function readWebModelBConfig(base) {
+  return {
+    provider: providerSelectB.value,
+    baseUrl: baseUrlInputB.value.trim() || DEFAULT_WEB_MODEL_CONFIG.compareB.baseUrl,
+    apiKey: apiKeyInputB.value.trim(),
+    model: modelInputB.value.trim() || DEFAULT_WEB_MODEL_CONFIG.compareB.model,
+    maxTokens: base.maxTokens,
+    systemPrompt: base.systemPrompt,
+    prompt: base.prompt,
+    faultMode: base.faultMode,
+    faultAfter: base.faultAfter,
+    faultProbability: base.faultProbability,
+  };
+}
+
+function writeWebModelBConfig(config) {
+  providerSelectB.value = config.provider || DEFAULT_WEB_MODEL_CONFIG.compareB.provider;
+  baseUrlInputB.value   = config.baseUrl || DEFAULT_WEB_MODEL_CONFIG.compareB.baseUrl;
+  modelInputB.value     = config.model || DEFAULT_WEB_MODEL_CONFIG.compareB.model;
+}
+
+function updateProviderFields() {
+  const hideProviderOnly = providerSelect.value === 'mock';
+  $$('.provider-only').forEach((el) => {
+    el.classList.toggle('hidden', hideProviderOnly);
+  });
+  const hideProviderOnlyB = providerSelectB.value === 'mock';
+  $$('.provider-only-b').forEach((el) => {
+    el.classList.toggle('hidden', hideProviderOnlyB);
+  });
+}
+
+function persistWebModelConfig() {
+  const cfg = readWebModelConfig();
+  const cfgB = readWebModelBConfig(cfg);
+  // Avoid persisting API keys to localStorage.
+  const { apiKey, ...safeCfg } = cfg;
+  const { apiKey: apiKeyB, ...safeCfgB } = cfgB;
+  localStorage.setItem(WEB_MODEL_STORAGE_KEY, JSON.stringify({
+    ...safeCfg,
+    compareB: safeCfgB,
+  }));
+}
+
+function loadWebModelConfig() {
+  try {
+    const raw = localStorage.getItem(WEB_MODEL_STORAGE_KEY);
+    if (!raw) {
+      writeWebModelConfig(DEFAULT_WEB_MODEL_CONFIG);
+      updateProviderFields();
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    writeWebModelConfig({
+      ...DEFAULT_WEB_MODEL_CONFIG,
+      ...parsed,
+      apiKey: '',
+    });
+    writeWebModelBConfig({
+      ...DEFAULT_WEB_MODEL_CONFIG.compareB,
+      ...(parsed.compareB || {}),
+      apiKey: '',
+    });
+  } catch {
+    writeWebModelConfig(DEFAULT_WEB_MODEL_CONFIG);
+    writeWebModelBConfig(DEFAULT_WEB_MODEL_CONFIG.compareB);
+  }
+  updateProviderFields();
+}
+
+function refreshActionButtons() {
+  const currentKind = activeTask?.kind || null;
+  streamBtn.textContent = currentKind === 'stream' ? t('btn_stream_stop') : t('btn_stream_start');
+  modelGenerateBtn.textContent = currentKind === 'model' ? t('btn_generate_stop') : t('btn_generate_start');
+  compareBtn.textContent = currentKind === 'compare' ? t('btn_compare_stop') : t('btn_compare_start');
+  fuzzBtn.textContent = currentKind === 'fuzz' ? t('btn_fuzz_stop') : t('btn_fuzz_start');
+  replayFuzzBtn.textContent = currentKind === 'replay' ? t('btn_replay_stop') : t('btn_replay_start');
+  parseBtn.textContent = t('btn_parse');
+  clearBtn.textContent = t('btn_clear');
+
+  streamBtn.disabled = !!currentKind && currentKind !== 'stream';
+  modelGenerateBtn.disabled = !!currentKind && currentKind !== 'model';
+  compareBtn.disabled = !!currentKind && currentKind !== 'compare';
+  fuzzBtn.disabled = !!currentKind && currentKind !== 'fuzz';
+  replayFuzzBtn.disabled = !!currentKind && currentKind !== 'replay';
+  parseBtn.disabled = !!currentKind;
+  clearBtn.disabled = !!currentKind;
+  clearEvtBtn.disabled = !!currentKind;
+  setBaselineBtn.disabled = !!currentKind;
+  diffBaselineBtn.disabled = !!currentKind;
+  exportFuzzBtn.disabled = !!currentKind;
+  importFuzzBtn.disabled = !!currentKind;
+  replayRunInput.disabled = !!currentKind;
+  sampleSelect.disabled = !!currentKind;
+  speedSlider.disabled = !!currentKind;
+  [
+    providerSelect,
+    baseUrlInput,
+    apiKeyInput,
+    modelInput,
+    maxTokensInput,
+    systemPromptInput,
+    modelPromptInput,
+    providerSelectB,
+    baseUrlInputB,
+    apiKeyInputB,
+    modelInputB,
+    faultModeInput,
+    faultAfterInput,
+    faultProbInput,
+    fuzzRunsInput,
+    fuzzChunkMinInput,
+    fuzzChunkMaxInput,
+    fuzzDelayMaxInput,
+    compareSyncInput,
+  ].forEach((el) => {
+    el.disabled = !!currentKind;
+  });
+  editor.readOnly = !!currentKind;
+}
+
+function startTask(kind, cancel) {
+  activeTask = { kind, cancel };
+  refreshActionButtons();
+}
+
+function finishTask() {
+  activeTask = null;
+  refreshActionButtons();
+}
+
+function setCompareMode(enabled) {
+  compareView.classList.toggle('show', enabled);
+  preview.style.display = enabled ? 'none' : 'block';
+}
+
+function syncCompareScroll(srcEl, dstEl) {
+  if (compareSyncInput.value !== 'on') return;
+  if (compareSyncLock) return;
+  compareSyncLock = true;
+  const maxSrc = Math.max(1, srcEl.scrollHeight - srcEl.clientHeight);
+  const ratio = srcEl.scrollTop / maxSrc;
+  const maxDst = Math.max(0, dstEl.scrollHeight - dstEl.clientHeight);
+  dstEl.scrollTop = ratio * maxDst;
+  compareSyncLock = false;
+}
+
+function setDiffOutput(text, isError = false) {
+  diffOutput.textContent = text;
+  diffOutput.classList.toggle('error', isError);
+}
+
+function clearSelectionHighlights() {
+  if (selectedEventEl) selectedEventEl.classList.remove('selected');
+  if (selectedAstLabelEl) selectedAstLabelEl.classList.remove('selected');
+  selectedEventEl = null;
+  selectedAstLabelEl = null;
+}
+
+function selectEventElement(el) {
+  if (selectedEventEl && selectedEventEl !== el) selectedEventEl.classList.remove('selected');
+  selectedEventEl = el;
+  if (el) el.classList.add('selected');
+}
+
+function selectAstElement(el) {
+  if (selectedAstLabelEl && selectedAstLabelEl !== el) selectedAstLabelEl.classList.remove('selected');
+  selectedAstLabelEl = el;
+  if (el) el.classList.add('selected');
+}
+
+function scrollEditorToOffset(offset) {
+  const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 20;
+  const before = editor.value.slice(0, Math.max(0, offset));
+  const line = before.split('\n').length - 1;
+  editor.scrollTop = Math.max(0, (line - 2) * lineHeight);
+}
+
+function highlightSourceRange(start, end) {
+  const s = Math.max(0, Math.min(start ?? 0, editor.value.length));
+  const eRaw = Math.max(s, Math.min(end ?? s, editor.value.length));
+  const e = eRaw > s ? eRaw : Math.min(editor.value.length, s + 1);
+  editor.focus();
+  editor.classList.add('range-active');
+  editor.setSelectionRange(s, e);
+  scrollEditorToOffset(s);
+}
+
 // ── Sample selector ───────────────────────────────────────────────────────────
 sampleSelect.addEventListener('change', () => {
   editor.value = SAMPLES[sampleSelect.value] || '';
   evStream.innerHTML = '';
   astTree.innerHTML  = '';
   preview.innerHTML  = '';
+  setCompareMode(false);
+  clearSelectionHighlights();
   resetStats();
 });
 editor.value = SAMPLES['complete'];
 
 // ── Event rendering ───────────────────────────────────────────────────────────
 let evIdx = 0;
+function makeRangeTracker(source) {
+  let cursor = 0;
+  return {
+    mark() {
+      return { start: cursor, end: cursor };
+    },
+    locate(fragment) {
+      if (!fragment) return { start: cursor, end: cursor };
+      let idx = source.indexOf(fragment, cursor);
+      if (idx === -1) idx = source.indexOf(fragment);
+      if (idx === -1) return { start: cursor, end: cursor };
+      cursor = idx + fragment.length;
+      return { start: idx, end: cursor };
+    },
+    getCursor() {
+      return cursor;
+    },
+  };
+}
 
-function addEvent(kind, typeNum, attrs = '') {
+function createPerfTracker() {
+  const t0 = performance.now();
+  let firstTokenAt = null;
+  let lastTokenAt = null;
+  let tokenCount = 0;
+  let tickTotal = 0;
+
+  return {
+    onToken(token = '') {
+      const now = performance.now();
+      if (firstTokenAt === null) firstTokenAt = now;
+      if (lastTokenAt !== null) tickTotal += (now - lastTokenAt);
+      lastTokenAt = now;
+      tokenCount += 1;
+    },
+    snapshot() {
+      const now = performance.now();
+      const elapsed = now - t0;
+      const tokenWindow = firstTokenAt === null ? 0 : (now - firstTokenAt);
+      const tps = tokenWindow > 0 ? (tokenCount / (tokenWindow / 1000)) : 0;
+      const tickAvg = tokenCount > 1 ? (tickTotal / (tokenCount - 1)) : 0;
+      return {
+        elapsedMs: Math.round(elapsed),
+        tokens: tokenCount,
+        ttftMs: firstTokenAt === null ? null : Math.round(firstTokenAt - t0),
+        tps,
+        tickAvgMs: tickAvg,
+      };
+    },
+  };
+}
+
+function applyPerfSnapshot(perf) {
+  statTokens = perf.tokens;
+  statTTFT = perf.ttftMs == null ? '-' : `${perf.ttftMs}ms`;
+  statTPS = perf.tokens < 1 ? '-' : perf.tps.toFixed(2);
+  statTick = perf.tokens < 2 ? '-' : `${perf.tickAvgMs.toFixed(1)}ms`;
+}
+
+function formatPerfSummary(perf) {
+  const ttft = perf.ttftMs == null ? '-' : `${perf.ttftMs}ms`;
+  const tps = perf.tokens < 1 ? '-' : perf.tps.toFixed(2);
+  const tick = perf.tokens < 2 ? '-' : `${perf.tickAvgMs.toFixed(1)}ms`;
+  return t('perf_summary', {
+    tokens: perf.tokens,
+    ttft,
+    tps,
+    tick,
+    total: perf.elapsedMs,
+  });
+}
+
+function eventSignature(kind, typeNum, attrs = '') {
+  return `${kind}|${typeNum}|${attrs}`;
+}
+
+function collectEventTrace(markdown, chunks = null) {
+  const trace = [];
+  const parser = new DemoParser({
+    onNodeOpen(type, node) {
+      trace.push(eventSignature('open', type, nodeAttrs(type, node)));
+    },
+    onNodeClose(type) {
+      trace.push(eventSignature('close', type));
+    },
+    onText(text) {
+      trace.push(eventSignature('text', NodeType.TEXT, text));
+    },
+    onModify(type, node) {
+      trace.push(eventSignature('modify', type, nodeAttrs(type, node)));
+    },
+  });
+  if (Array.isArray(chunks)) chunks.forEach((chunk) => parser.feed(chunk));
+  else parser.feed(markdown);
+  parser.finish();
+  return trace;
+}
+
+function diffEventTraces(expected, actual) {
+  const minLen = Math.min(expected.length, actual.length);
+  for (let i = 0; i < minLen; i++) {
+    if (expected[i] !== actual[i]) {
+      return { ok: false, index: i, expected: expected[i], actual: actual[i] };
+    }
+  }
+  if (expected.length !== actual.length) {
+    return {
+      ok: false,
+      index: minLen,
+      expected: expected[minLen] ?? '<EOF>',
+      actual: actual[minLen] ?? '<EOF>',
+    };
+  }
+  return { ok: true };
+}
+
+function createFaultState() {
+  return { triggered: false, mode: null, detail: '' };
+}
+
+function markFault(faultState, mode, detail) {
+  if (!faultState) return;
+  if (faultState.triggered) return;
+  faultState.triggered = true;
+  faultState.mode = mode;
+  faultState.detail = detail || '';
+}
+
+function formatErrorLabel(err, faultState = null) {
+  if (faultState?.triggered) {
+    return t('err_injected_fault', {
+      mode: faultState.mode,
+      detail: faultState.detail || err?.message || String(err),
+    });
+  }
+  if (err?.isInjectedFault) {
+    return t('err_injected_fault_simple', { detail: err?.message || String(err) });
+  }
+  return t('err_provider', { detail: err?.message || String(err) });
+}
+
+function summarizeTextDiff(aText, bText) {
+  if (aText === bText) return t('diff_ab_identical');
+  const a = aText || '';
+  const b = bText || '';
+  const min = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < min && a[i] === b[i]) i++;
+  const aSlice = a.slice(i, i + 60).replace(/\n/g, '↵');
+  const bSlice = b.slice(i, i + 60).replace(/\n/g, '↵');
+  return t('diff_ab_summary', {
+    offset: i,
+    aLen: a.length,
+    bLen: b.length,
+    aSnippet: `${aSlice}${a.length > i + 60 ? '…' : ''}`,
+    bSnippet: `${bSlice}${b.length > i + 60 ? '…' : ''}`,
+  });
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function addEvent(kind, typeNum, attrs = '', range = null) {
   statEvents++;
   evIdx++;
   const typeName = TYPE_NAME[typeNum] ?? String(typeNum);
   const el = document.createElement('div');
   el.className = 'ev';
+  if (range) {
+    el.dataset.start = String(range.start ?? 0);
+    el.dataset.end = String(range.end ?? range.start ?? 0);
+    el.addEventListener('click', () => {
+      selectEventElement(el);
+      const start = parseInt(el.dataset.start, 10) || 0;
+      const end = parseInt(el.dataset.end, 10) || start;
+      highlightSourceRange(start, end);
+    });
+  }
   el.innerHTML =
     `<span class="ev-idx">${evIdx}</span>` +
     `<span class="ev-kind ${kind}">${kind.toUpperCase()}</span>` +
@@ -836,23 +1958,39 @@ function addEvent(kind, typeNum, attrs = '') {
 function clearEvents() {
   evStream.innerHTML = '';
   evIdx = 0;
+  clearSelectionHighlights();
 }
 
 clearEvtBtn.addEventListener('click', clearEvents);
 
 // ── AST builder ───────────────────────────────────────────────────────────────
 function buildAST(markdown) {
-  const root = { type: NodeType.DOCUMENT, children: [], text: '' };
+  const rangeTracker = makeRangeTracker(markdown);
+  const root = { type: NodeType.DOCUMENT, children: [], text: '', rangeStart: 0, rangeEnd: 0 };
   const stack = [root];
 
   const demoParser = new DemoParser({
     onNodeOpen(type, node) {
-      const n = { type, ...node, children: [], text: '' };
+      const mark = rangeTracker.mark();
+      const n = { type, ...node, children: [], text: '', rangeStart: mark.start, rangeEnd: mark.end };
       stack[stack.length - 1].children.push(n);
       stack.push(n);
     },
-    onNodeClose() { if (stack.length > 1) stack.pop(); },
-    onText(text)  { const top = stack[stack.length - 1]; top.text += text; },
+    onNodeClose() {
+      if (stack.length <= 1) return;
+      const closing = stack.pop();
+      const mark = rangeTracker.mark();
+      closing.rangeEnd = Math.max(closing.rangeEnd ?? mark.end, mark.end);
+    },
+    onText(text)  {
+      const top = stack[stack.length - 1];
+      top.text += text;
+      const located = rangeTracker.locate(text);
+      stack.forEach((n) => {
+        n.rangeStart = Math.min(n.rangeStart ?? located.start, located.start);
+        n.rangeEnd = Math.max(n.rangeEnd ?? located.end, located.end);
+      });
+    },
     onModify(type, node) {
       const top = stack[stack.length - 1];
       Object.assign(top, { type, ...node });
@@ -887,6 +2025,18 @@ function renderAST(node, depth = 0) {
     (attrs ? `<span class="tn-attr">${attrs}</span>` : '') +
     (textPreview ? `<span class="tn-text">${textPreview}</span>` : '') +
     `</div>`;
+
+  const label = el.querySelector('.tree-node-label');
+  if (label) {
+    label.dataset.start = String(node.rangeStart ?? 0);
+    label.dataset.end = String(node.rangeEnd ?? node.rangeStart ?? 0);
+    label.addEventListener('click', () => {
+      selectAstElement(label);
+      const start = parseInt(label.dataset.start, 10) || 0;
+      const end = parseInt(label.dataset.end, 10) || start;
+      highlightSourceRange(start, end);
+    });
+  }
 
   if (node.children?.length) {
     const childWrap = document.createElement('div');
@@ -1418,30 +2568,31 @@ function runParse() {
   clearEvents();
   astTree.innerHTML  = '';
   preview.innerHTML  = '';
+  setCompareMode(false);
   resetStats();
+  editor.classList.remove('range-active');
 
   const t0 = performance.now();
+  const rangeTracker = makeRangeTracker(md);
   const callbacks = {
     onNodeOpen(type, node) {
-      statEvents++; statNodes++;
+      statNodes++;
       const attrStr = nodeAttrs(type, node);
-      addEvent('open', type, attrStr);
+      addEvent('open', type, attrStr, rangeTracker.mark());
       updateStats();
     },
     onNodeClose(type) {
-      statEvents++;
-      addEvent('close', type);
+      addEvent('close', type, '', rangeTracker.mark());
       updateStats();
     },
     onText(text) {
-      statEvents++; statChars += text.length;
+      statChars += text.length;
       const display = text.slice(0, 40).replace(/\n/g, '↵');
-      addEvent('text', NodeType.TEXT, `"${display}${text.length > 40 ? '…' : ''}"`);
+      addEvent('text', NodeType.TEXT, `"${display}${text.length > 40 ? '…' : ''}"`, rangeTracker.locate(text));
       updateStats();
     },
     onModify(type, node) {
-      statEvents++;
-      addEvent('modify', type, nodeAttrs(type, node));
+      addEvent('modify', type, nodeAttrs(type, node), rangeTracker.mark());
       updateStats();
     },
   };
@@ -1499,114 +2650,813 @@ function makeLivePreview(container) {
   };
 }
 
-// ── Streaming simulation ──────────────────────────────────────────────────────
-let streamAbort = null;
+function renderTick(text, livePreview, streaming) {
+  const evScrollBottom =
+    evStream.scrollHeight - evStream.scrollTop - evStream.clientHeight < 40;
+  evIdx = 0;
+  evStream.innerHTML = '';
+  statEvents = statNodes = statChars = 0;
+  const rangeTracker = makeRangeTracker(text);
 
+  const tickP = new DemoParser({
+    onNodeOpen(type, node) {
+      statNodes++;
+      addEvent('open', type, nodeAttrs(type, node), rangeTracker.mark());
+    },
+    onNodeClose(type) {
+      addEvent('close', type, '', rangeTracker.mark());
+    },
+    onText(t) {
+      statChars += t.length;
+      addEvent('text', NodeType.TEXT, `"${t.slice(0,40).replace(/\n/g,'↵')}${t.length>40?'…':''}"`, rangeTracker.locate(t));
+    },
+    onModify(type, node) {
+      addEvent('modify', type, nodeAttrs(type, node), rangeTracker.mark());
+    },
+  });
+  tickP.feed(text).finish();
+  if (evScrollBottom) evStream.scrollTop = evStream.scrollHeight;
+
+  astTree.innerHTML = '';
+  astTree.appendChild(renderAST(buildAST(text)));
+
+  if (streaming) livePreview.render(text);
+  else {
+    livePreview.stop();
+    livePreview.render(text);
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+function randomChunkSplit(text, minSize, maxSize) {
+  const chunks = [];
+  let i = 0;
+  while (i < text.length) {
+    const size = randInt(minSize, maxSize);
+    chunks.push(text.slice(i, i + size));
+    i += size;
+  }
+  return chunks;
+}
+
+async function* withFaultInjection(stream, config, baseDelayMs = 0, faultState = null) {
+  const mode = config.faultMode || 'none';
+  const after = Math.max(1, config.faultAfter || 120);
+  const prob = Math.max(0, Math.min(100, config.faultProbability ?? 10)) / 100;
+  let idx = 0;
+  let injectedInvalid = false;
+  for await (const token of stream) {
+    idx++;
+    if (mode === 'latency') {
+      const jitter = randInt(baseDelayMs, baseDelayMs + 120);
+      await sleep(jitter);
+    }
+    if (mode === 'prob_jitter' && Math.random() < prob) {
+      const jitter = randInt(baseDelayMs, baseDelayMs + 120);
+      markFault(faultState, 'prob_jitter', `jittered ${jitter}ms at token ${idx}`);
+      await sleep(jitter);
+    }
+    if (mode === 'disconnect' && idx >= after) {
+      markFault(faultState, 'disconnect', `forced disconnect at token ${idx}`);
+      const err = new Error(`disconnect at token ${idx}`);
+      err.isInjectedFault = true;
+      throw err;
+    }
+    if (mode === 'prob_disconnect' && Math.random() < prob) {
+      markFault(faultState, 'prob_disconnect', `random disconnect at token ${idx}`);
+      const err = new Error(`random disconnect at token ${idx}`);
+      err.isInjectedFault = true;
+      throw err;
+    }
+    if (mode === 'half_packet' && idx >= after) {
+      markFault(faultState, 'half_packet', `forced stream stop at token ${idx}`);
+      return;
+    }
+    if (mode === 'invalid_token' && idx >= after && !injectedInvalid) {
+      injectedInvalid = true;
+      markFault(faultState, 'invalid_token', `inserted replacement character at token ${idx}`);
+      yield '\ufffd';
+    }
+    if (mode === 'prob_invalid' && Math.random() < prob) {
+      markFault(faultState, 'prob_invalid', `inserted replacement character at token ${idx}`);
+      yield '\ufffd';
+    }
+    yield token;
+  }
+}
+
+async function* mockTokenStream(prompt, delayMs) {
+  const promptSection = prompt.trim()
+    ? `## Prompt\n\n${prompt.trim()}\n\n`
+    : '';
+  const response = `${promptSection}${MOCK_MODEL_RESPONSE}`;
+  for (const ch of response) {
+    yield ch;
+    await sleep(delayMs);
+  }
+}
+
+async function* openAiTokenStream(config, signal) {
+  if (!config.baseUrl) throw new Error('Base URL is required for OpenAI-compatible mode.');
+  if (!config.model) throw new Error('Model is required for OpenAI-compatible mode.');
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+
+  const payload = {
+    model: config.model,
+    stream: true,
+    max_tokens: config.maxTokens,
+    messages: [
+      ...(config.systemPrompt ? [{ role: 'system', content: config.systemPrompt }] : []),
+      { role: 'user', content: config.prompt },
+    ],
+  };
+
+  const response = await fetch(`${config.baseUrl.replace(/\/+$/,'')}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '');
+    throw new Error(`HTTP ${response.status}: ${(bodyText || response.statusText || 'request failed').slice(0, 200)}`);
+  }
+  if (!response.body) throw new Error('Streaming response body is not available.');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+
+    while (true) {
+      const eventEnd = buffer.indexOf('\n\n');
+      if (eventEnd === -1) break;
+
+      const rawEvent = buffer.slice(0, eventEnd);
+      buffer = buffer.slice(eventEnd + 2);
+
+      const dataLines = rawEvent
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart());
+      if (!dataLines.length) continue;
+
+      const payloadText = dataLines.join('\n');
+      if (payloadText === '[DONE]') return;
+
+      let msg;
+      try {
+        msg = JSON.parse(payloadText);
+      } catch {
+        continue;
+      }
+
+      const choice = msg?.choices?.[0];
+      const token = choice?.delta?.content;
+      if (typeof token === 'string' && token.length) yield token;
+      if (choice?.finish_reason) return;
+    }
+  }
+}
+
+// ── Streaming simulation ──────────────────────────────────────────────────────
 async function runStream() {
-  if (streamAbort) { streamAbort(); return; }
+  if (activeTask?.kind === 'stream') { activeTask.cancel(); return; }
+  if (activeTask) return;
 
   clearEvents();
   astTree.innerHTML = '';
   preview.innerHTML = '';
+  setCompareMode(false);
   resetStats();
 
   const md = editor.value;
   const delay = () => parseInt(speedSlider.value);
 
-  streamBtn.textContent = '■ Stop';
-  parseBtn.disabled = true;
-
   let cancelled = false;
-  streamAbort = () => { cancelled = true; };
+  startTask('stream', () => { cancelled = true; });
 
   // ── live preview renderer ──
   const livePreview = makeLivePreview(preview);
 
   const CHUNK = 7;
   const t0 = performance.now();
+  const perf = createPerfTracker();
   let accumulated = '';
 
-  // Re-render all three panels from the accumulated text on each tick.
-  // Events and AST are rebuilt from scratch (same pattern as Preview's
-  // full re-render), so all panels stay in sync as tokens arrive.
-  function renderTick(text, streaming) {
-    // ── Events ──
-    // Save scroll position so the list doesn't jump to top on each rebuild.
-    const evScrollBottom =
-      evStream.scrollHeight - evStream.scrollTop - evStream.clientHeight < 40;
-    evIdx = 0;
-    evStream.innerHTML = '';
-    statEvents = statNodes = statChars = 0;
-    const tickP = new DemoParser({
-      onNodeOpen(type, node) {
-        statEvents++; statNodes++;
-        addEvent('open', type, nodeAttrs(type, node));
-      },
-      onNodeClose(type) {
-        statEvents++;
-        addEvent('close', type);
-      },
-      onText(t) {
-        statEvents++; statChars += t.length;
-        addEvent('text', NodeType.TEXT, `"${t.slice(0,40).replace(/\n/g,'↵')}${t.length>40?'…':''}"`);
-      },
-      onModify(type, node) {
-        statEvents++;
-        addEvent('modify', type, nodeAttrs(type, node));
-      },
+  try {
+    for (let i = 0; i < md.length && !cancelled; i += CHUNK) {
+      const chunk = md.slice(i, i + CHUNK);
+      accumulated += chunk;
+      perf.onToken(chunk);
+      renderTick(accumulated, livePreview, true);
+      statTime = Math.round(performance.now() - t0);
+      applyPerfSnapshot(perf.snapshot());
+      updateStats();
+      await sleep(delay());
+    }
+
+    if (!cancelled) {
+      // Final pass: ensure the complete document is rendered accurately.
+      renderTick(md, livePreview, false);
+      statTime = Math.round(performance.now() - t0);
+      applyPerfSnapshot(perf.snapshot());
+      updateStats();
+    }
+  } finally {
+    livePreview.stop();
+    finishTask();
+  }
+}
+
+function describeTraceDiff(diff) {
+  if (diff.ok) return t('diff_none');
+  return t('diff_mismatch', {
+    index: diff.index,
+    expected: diff.expected,
+    actual: diff.actual,
+  });
+}
+
+function setBaselineFromEditor() {
+  eventBaselineTrace = collectEventTrace(editor.value);
+  setDiffOutput(t('baseline_set', { events: eventBaselineTrace.length }));
+}
+
+function diffAgainstBaseline() {
+  if (!eventBaselineTrace) {
+    setDiffOutput(t('diff_default'), true);
+    return;
+  }
+  const current = collectEventTrace(editor.value);
+  const diff = diffEventTraces(eventBaselineTrace, current);
+  setDiffOutput(describeTraceDiff(diff), !diff.ok);
+}
+
+function exportFuzzReport() {
+  if (!lastFuzzReport) {
+    setDiffOutput(t('fuzz_report_empty'), true);
+    return;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  downloadJson(`mk-parser-fuzz-${stamp}.json`, lastFuzzReport);
+  setDiffOutput(t('fuzz_report_exported', {
+    runs: lastFuzzReport.summary?.completedRuns || 0,
+  }));
+}
+
+function pickFuzzReport() {
+  return importedFuzzReport || lastFuzzReport;
+}
+
+function validateFuzzReport(data) {
+  if (!data || typeof data !== 'object') throw new Error('Invalid JSON object.');
+  if (data.kind !== 'mk-parser-fuzz-report') throw new Error('Not a mk-parser fuzz report.');
+  if (!Array.isArray(data.runs)) throw new Error('Report has no runs.');
+  if (typeof data.inputText !== 'string') throw new Error('Report missing inputText.');
+  return data;
+}
+
+function importFuzzReportFromText(text) {
+  const parsed = JSON.parse(text);
+  importedFuzzReport = validateFuzzReport(parsed);
+  setDiffOutput(t('fuzz_imported', { runs: importedFuzzReport.runs.length }));
+}
+
+function splitByChunkSizes(text, sizes) {
+  const chunks = [];
+  let offset = 0;
+  for (const rawSize of sizes) {
+    const size = Math.max(1, Number(rawSize) || 1);
+    chunks.push(text.slice(offset, offset + size));
+    offset += size;
+  }
+  if (offset < text.length) chunks.push(text.slice(offset));
+  return chunks.filter((c) => c.length > 0);
+}
+
+async function runReplayFromReport() {
+  if (activeTask?.kind === 'replay') { activeTask.cancel(); return; }
+  if (activeTask) return;
+
+  const report = pickFuzzReport();
+  if (!report) {
+    setDiffOutput(t('replay_no_report'), true);
+    return;
+  }
+
+  const runNum = Math.max(1, parseInt(replayRunInput.value, 10) || 1);
+  const run = report.runs.find((r) => r.run === runNum);
+  if (!run) {
+    setDiffOutput(t('replay_run_missing', { run: runNum }), true);
+    return;
+  }
+  if (!Array.isArray(run.chunkSizes) || !run.chunkSizes.length) {
+    setDiffOutput(t('replay_chunks_missing', { run: runNum }), true);
+    return;
+  }
+
+  clearEvents();
+  astTree.innerHTML = '';
+  preview.innerHTML = '';
+  setCompareMode(false);
+  resetStats();
+  switchTab('events');
+
+  editor.value = report.inputText;
+  const chunks = splitByChunkSizes(report.inputText, run.chunkSizes);
+  const baseline = collectEventTrace(report.inputText);
+  const delay = Math.max(0, parseInt(speedSlider.value, 10) || 0);
+  const livePreview = makeLivePreview(preview);
+
+  let cancelled = false;
+  startTask('replay', () => { cancelled = true; setDiffOutput(t('replay_stopping')); });
+
+  const perf = createPerfTracker();
+  const t0 = performance.now();
+  let accumulated = '';
+
+  try {
+    for (const chunk of chunks) {
+      if (cancelled) break;
+      accumulated += chunk;
+      perf.onToken(chunk);
+      renderTick(accumulated, livePreview, true);
+      statTime = Math.round(performance.now() - t0);
+      applyPerfSnapshot(perf.snapshot());
+      updateStats();
+      if (delay > 0) await sleep(delay);
+    }
+    renderTick(accumulated, livePreview, false);
+    const replayTrace = collectEventTrace(accumulated);
+    const diff = diffEventTraces(baseline, replayTrace);
+    const msg = t('replay_summary', {
+      run: runNum,
+      total: report.runs.length,
+      chunks: chunks.length,
+      diff: describeTraceDiff(diff),
     });
-    tickP.feed(text).finish();
-    if (evScrollBottom) evStream.scrollTop = evStream.scrollHeight;
+    setDiffOutput(msg, !diff.ok);
+  } finally {
+    livePreview.stop();
+    finishTask();
+  }
+}
 
-    // ── AST ──
-    astTree.innerHTML = '';
-    astTree.appendChild(renderAST(buildAST(text)));
+async function collectTraceByChunks(markdown, chunks, delayMax, isCancelled) {
+  const trace = [];
+  const parser = new DemoParser({
+    onNodeOpen(type, node) {
+      trace.push(eventSignature('open', type, nodeAttrs(type, node)));
+    },
+    onNodeClose(type) {
+      trace.push(eventSignature('close', type));
+    },
+    onText(text) {
+      trace.push(eventSignature('text', NodeType.TEXT, text));
+    },
+    onModify(type, node) {
+      trace.push(eventSignature('modify', type, nodeAttrs(type, node)));
+    },
+  });
+  for (const chunk of chunks) {
+    if (isCancelled()) break;
+    parser.feed(chunk);
+    if (delayMax > 0) await sleep(randInt(0, delayMax));
+  }
+  parser.finish();
+  return trace;
+}
 
-    // ── Preview ──
-    if (streaming) livePreview.render(text);
-    else           { livePreview.stop(); livePreview.render(text); }
+async function runFuzz() {
+  if (activeTask?.kind === 'fuzz') { activeTask.cancel(); return; }
+  if (activeTask) return;
+
+  const cfg = readWebModelConfig();
+  persistWebModelConfig();
+  const runs = cfg.fuzzRuns;
+  const minChunk = cfg.fuzzChunkMin;
+  const maxChunk = Math.max(minChunk, cfg.fuzzChunkMax);
+  const delayMax = cfg.fuzzDelayMax;
+  const md = editor.value;
+
+  if (!md.length) {
+    setDiffOutput(t('fuzz_editor_empty'), true);
+    return;
   }
 
-  for (let i = 0; i < md.length && !cancelled; i += CHUNK) {
-    accumulated += md.slice(i, i + CHUNK);
-    renderTick(accumulated, true);
+  clearEvents();
+  astTree.innerHTML = '';
+  preview.innerHTML = '';
+  setCompareMode(false);
+  resetStats();
+  switchTab('events');
+
+  let cancelled = false;
+  startTask('fuzz', () => { cancelled = true; setDiffOutput(t('fuzz_stopping')); });
+
+  const baseline = collectEventTrace(md);
+  eventBaselineTrace = baseline;
+  let mismatches = 0;
+  let firstMismatch = null;
+  const report = {
+    kind: 'mk-parser-fuzz-report',
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    config: {
+      runs,
+      chunkMin: minChunk,
+      chunkMax: maxChunk,
+      delayMax,
+    },
+    inputText: md,
+    inputLength: md.length,
+    baselineEventCount: baseline.length,
+    baselinePreview: baseline.slice(0, 20),
+    runs: [],
+    summary: null,
+  };
+
+  try {
+    for (let i = 0; i < runs && !cancelled; i++) {
+      const chunks = randomChunkSplit(md, minChunk, maxChunk);
+      const trace = await collectTraceByChunks(md, chunks, delayMax, () => cancelled);
+      const diff = diffEventTraces(baseline, trace);
+      report.runs.push({
+        run: i + 1,
+        chunkCount: chunks.length,
+        chunkSizes: chunks.map((c) => c.length),
+        traceCount: trace.length,
+        mismatch: diff.ok ? null : {
+          index: diff.index,
+          expected: diff.expected,
+          actual: diff.actual,
+        },
+      });
+      if (!diff.ok) {
+        mismatches += 1;
+        if (!firstMismatch) {
+          firstMismatch = { run: i + 1, chunks: chunks.length, diff };
+        }
+      }
+      setDiffOutput(
+        t('fuzz_progress', {
+          run: i + 1,
+          runs,
+          baseline: baseline.length,
+          mismatches,
+        }),
+        false
+      );
+    }
+
+    runParse();
+    report.summary = {
+      cancelled: false,
+      completedRuns: report.runs.length,
+      mismatches,
+      firstMismatchRun: firstMismatch?.run ?? null,
+    };
+    lastFuzzReport = report;
+    if (cancelled) {
+      setDiffOutput(t('fuzz_stopped'));
+      return;
+    }
+    if (!firstMismatch) {
+      setDiffOutput(t('fuzz_done_ok', { runs, baseline: baseline.length }));
+      return;
+    }
+    setDiffOutput(
+      t('fuzz_done_bad', {
+        runs,
+        mismatches,
+        firstRun: firstMismatch.run,
+        chunks: firstMismatch.chunks,
+        diff: describeTraceDiff(firstMismatch.diff),
+      }),
+      true
+    );
+  } finally {
+    if (cancelled) {
+      report.summary = {
+        cancelled: true,
+        completedRuns: report.runs.length,
+        mismatches,
+        firstMismatchRun: firstMismatch?.run ?? null,
+      };
+      lastFuzzReport = report;
+    }
+    finishTask();
+  }
+}
+
+async function runModelStream() {
+  if (activeTask?.kind === 'model') { activeTask.cancel(); return; }
+  if (activeTask) return;
+
+  clearEvents();
+  astTree.innerHTML = '';
+  preview.innerHTML = '';
+  setCompareMode(false);
+  resetStats();
+  switchTab('preview');
+
+  let cancelled = false;
+  const controller = new AbortController();
+  startTask('model', () => {
+    cancelled = true;
+    controller.abort();
+    setModelStatus(t('status_stopping'));
+  });
+
+  const cfg = readWebModelConfig();
+  persistWebModelConfig();
+
+  if (!cfg.prompt.trim()) {
+    setModelStatus(t('status_prompt_empty'), true);
+    finishTask();
+    return;
+  }
+
+  editor.value = '';
+  const livePreview = makeLivePreview(preview);
+  const t0 = performance.now();
+  const perf = createPerfTracker();
+  const faultState = createFaultState();
+  let accumulated = '';
+
+  try {
+    setModelStatus(cfg.provider === 'mock'
+      ? t('status_generating_mock')
+      : t('status_streaming_from', { baseUrl: cfg.baseUrl, model: cfg.model }));
+
+    const baseStream = cfg.provider === 'mock'
+      ? mockTokenStream(cfg.prompt, parseInt(speedSlider.value, 10))
+      : openAiTokenStream(cfg, controller.signal);
+    const tokenStream = withFaultInjection(baseStream, cfg, parseInt(speedSlider.value, 10), faultState);
+
+    for await (const token of tokenStream) {
+      if (cancelled) break;
+      accumulated += token;
+      perf.onToken(token);
+      editor.value = accumulated;
+      renderTick(accumulated, livePreview, true);
+      statTime = Math.round(performance.now() - t0);
+      applyPerfSnapshot(perf.snapshot());
+      updateStats();
+    }
+
+    renderTick(accumulated, livePreview, false);
     statTime = Math.round(performance.now() - t0);
+    const finalPerf = perf.snapshot();
+    applyPerfSnapshot(finalPerf);
     updateStats();
-    await new Promise(r => setTimeout(r, delay()));
+    if (cancelled) {
+      setModelStatus(t('status_stopped'));
+    } else if (faultState.triggered) {
+      setModelStatus(
+        t('status_injected_fault', {
+          mode: faultState.mode,
+          detail: faultState.detail,
+          perf: formatPerfSummary(finalPerf),
+        }),
+        false
+      );
+    } else {
+      setModelStatus(t('status_done_with_chars', {
+        chars: statChars,
+        perf: formatPerfSummary(finalPerf),
+      }));
+    }
+  } catch (err) {
+    if (cancelled || err?.name === 'AbortError') {
+      setModelStatus(t('status_stopped'));
+      return;
+    }
+    const message = formatErrorLabel(err, faultState);
+    setModelStatus(message, !faultState.triggered);
+  } finally {
+    livePreview.stop();
+    finishTask();
+  }
+}
+
+function updateCompareMetrics(el, perf, state = 'running', err = null) {
+  if (state === 'error') {
+    el.textContent = t('metric_error', { detail: err?.message || String(err) });
+    return;
+  }
+  if (!perf) {
+    el.textContent = t('metrics_idle');
+    return;
+  }
+  const summary = formatPerfSummary(perf.snapshot());
+  el.textContent = state === 'done' ? t('metric_done', { summary }) : summary;
+}
+
+async function runCompareModels() {
+  if (activeTask?.kind === 'compare') { activeTask.cancel(); return; }
+  if (activeTask) return;
+
+  clearEvents();
+  astTree.innerHTML = '';
+  preview.innerHTML = '';
+  resetStats();
+  setCompareMode(true);
+  switchTab('preview');
+
+  const cfgA = readWebModelConfig();
+  const cfgB = readWebModelBConfig(cfgA);
+  persistWebModelConfig();
+  if (!cfgA.prompt.trim()) {
+    setModelStatus(t('status_prompt_empty'), true);
+    setCompareMode(false);
+    return;
   }
 
-  if (!cancelled) {
-    // Final pass: ensure the complete document is rendered accurately.
-    renderTick(md, false);
-    statTime = Math.round(performance.now() - t0);
-    updateStats();
-  }
+  compareLabelA.textContent = `${t('compare_label_a_prefix')} · ${cfgA.provider === 'mock' ? 'mock' : cfgA.model}`;
+  compareLabelB.textContent = `${t('compare_label_b_prefix')} · ${cfgB.provider === 'mock' ? 'mock' : cfgB.model}`;
+  comparePreviewA.innerHTML = '';
+  comparePreviewB.innerHTML = '';
+  compareMetricsA.textContent = t('metric_starting');
+  compareMetricsB.textContent = t('metric_starting');
 
-  livePreview.stop();
-  streamAbort = null;
-  streamBtn.textContent = '▶ Stream';
-  parseBtn.disabled = false;
+  let cancelled = false;
+  const controllerA = new AbortController();
+  const controllerB = new AbortController();
+  startTask('compare', () => {
+    cancelled = true;
+    controllerA.abort();
+    controllerB.abort();
+    setModelStatus(t('status_stopping_compare'));
+  });
+
+  const runOne = async (cfg, paneEl, metricEl, controller) => {
+    const live = makeLivePreview(paneEl);
+    const perf = createPerfTracker();
+    const faultState = createFaultState();
+    let text = '';
+    try {
+      const baseStream = cfg.provider === 'mock'
+        ? mockTokenStream(cfg.prompt, parseInt(speedSlider.value, 10))
+        : openAiTokenStream(cfg, controller.signal);
+      const stream = withFaultInjection(baseStream, cfg, parseInt(speedSlider.value, 10), faultState);
+      for await (const token of stream) {
+        if (cancelled) break;
+        text += token;
+        perf.onToken(token);
+        live.render(text);
+        updateCompareMetrics(metricEl, perf, 'running');
+      }
+      live.stop();
+      live.render(text);
+      if (faultState.triggered) {
+        metricEl.textContent = t('metric_fault', {
+          mode: faultState.mode,
+          summary: formatPerfSummary(perf.snapshot()),
+        });
+      } else {
+        updateCompareMetrics(metricEl, perf, 'done');
+      }
+      return { text, perf, error: null, faultState };
+    } catch (err) {
+      live.stop();
+      live.render(text);
+      metricEl.textContent = formatErrorLabel(err, faultState);
+      return { text, perf, error: err, faultState };
+    }
+  };
+
+  try {
+    setModelStatus(t('status_running_compare'));
+    const [a, b] = await Promise.all([
+      runOne(cfgA, comparePreviewA, compareMetricsA, controllerA),
+      runOne(cfgB, comparePreviewB, compareMetricsB, controllerB),
+    ]);
+
+    editor.value = a.text || b.text || '';
+    const nullPreview = { render() {}, stop() {} };
+    renderTick(editor.value, nullPreview, false);
+
+    const perfA = a.perf.snapshot();
+    applyPerfSnapshot(perfA);
+    statTime = Math.max(perfA.elapsedMs, b.perf.snapshot().elapsedMs);
+    updateStats();
+
+    if (cancelled) {
+      setModelStatus(t('status_compare_stopped'));
+      return;
+    }
+    if (a.error || b.error) {
+      const left = a.error ? `A=${formatErrorLabel(a.error, a.faultState)}` : `A=${t('run_ok')}`;
+      const right = b.error ? `B=${formatErrorLabel(b.error, b.faultState)}` : `B=${t('run_ok')}`;
+      setModelStatus(t('status_compare_error', { left, right }), true);
+      setDiffOutput(t('diff_skipped_on_error'), true);
+      return;
+    }
+    setDiffOutput(summarizeTextDiff(a.text, b.text));
+    setModelStatus(t('status_compare_done', {
+      a: formatPerfSummary(perfA),
+      b: formatPerfSummary(b.perf.snapshot()),
+    }));
+  } finally {
+    finishTask();
+  }
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
 streamBtn.addEventListener('click', runStream);
+modelGenerateBtn.addEventListener('click', runModelStream);
+compareBtn.addEventListener('click', runCompareModels);
+fuzzBtn.addEventListener('click', runFuzz);
 parseBtn.addEventListener('click', runParse);
+setBaselineBtn.addEventListener('click', setBaselineFromEditor);
+diffBaselineBtn.addEventListener('click', diffAgainstBaseline);
+exportFuzzBtn.addEventListener('click', exportFuzzReport);
+importFuzzBtn.addEventListener('click', () => importFuzzFile.click());
+replayFuzzBtn.addEventListener('click', runReplayFromReport);
+importFuzzFile.addEventListener('change', async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    importFuzzReportFromText(text);
+  } catch (err) {
+    setDiffOutput(t('import_failed', { detail: err?.message || String(err) }), true);
+  } finally {
+    importFuzzFile.value = '';
+  }
+});
 clearBtn.addEventListener('click', () => {
   editor.value = '';
   evStream.innerHTML = '';
   astTree.innerHTML  = '';
   preview.innerHTML  = '';
+  setCompareMode(false);
+  setDiffOutput(t('diff_default'));
+  editor.classList.remove('range-active');
+  lastFuzzReport = null;
+  importedFuzzReport = null;
   resetStats();
 });
 
+[
+  providerSelect,
+  baseUrlInput,
+  modelInput,
+  maxTokensInput,
+  systemPromptInput,
+  modelPromptInput,
+  providerSelectB,
+  baseUrlInputB,
+  modelInputB,
+  faultModeInput,
+  faultAfterInput,
+  faultProbInput,
+  fuzzRunsInput,
+  fuzzChunkMinInput,
+  fuzzChunkMaxInput,
+  fuzzDelayMaxInput,
+  compareSyncInput,
+].forEach((el) => {
+  el.addEventListener('input', persistWebModelConfig);
+});
+providerSelect.addEventListener('change', () => {
+  updateProviderFields();
+  persistWebModelConfig();
+});
+providerSelectB.addEventListener('change', () => {
+  updateProviderFields();
+  persistWebModelConfig();
+});
+compareSyncInput.addEventListener('change', persistWebModelConfig);
+
+comparePreviewA.addEventListener('scroll', () => syncCompareScroll(comparePreviewA, comparePreviewB));
+comparePreviewB.addEventListener('scroll', () => syncCompareScroll(comparePreviewB, comparePreviewA));
+
 // Auto-parse on edit (debounced)
-let debounceTimer;
 editor.addEventListener('input', () => {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(runParse, 600);
 });
 
 // Initial parse
+loadWebModelConfig();
+applyI18n();
+langToggleBtn.addEventListener('click', () => {
+  setLanguage(currentLang === 'zh' ? 'en' : 'zh');
+});
+refreshActionButtons();
+setModelStatus(t('status_idle'));
 runParse();
 </script>
 </body>
