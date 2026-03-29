@@ -531,6 +531,29 @@ function renderHTMLPreview(markdown) {
     htmlChunks.push(`</${tag}>`);
   const escHTML = (s) =>
     s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const sanitizeHTML = (raw) => {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = raw;
+
+    const blockedTags = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta']);
+    const nodes = tpl.content.querySelectorAll('*');
+    for (const el of nodes) {
+      const tag = el.tagName.toLowerCase();
+      if (blockedTags.has(tag)) { el.remove(); continue; }
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        const value = attr.value.trim().toLowerCase();
+        if (name.startsWith('on')) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+        if ((name === 'href' || name === 'src' || name === 'xlink:href') && value.startsWith('javascript:')) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    }
+    return tpl.innerHTML;
+  };
 
   const BLOCK_TAG = {
     [NodeType.DOCUMENT]:    ['div', ''],
@@ -568,7 +591,7 @@ function renderHTMLPreview(markdown) {
         stack.push(null); return;
       }
       if (type === NodeType.HTML_BLOCK || type === NodeType.HTML_INLINE) {
-        stack.push(null); return;
+        stack.push('html_raw'); return;
       }
       if (type === NodeType.SOFT_BREAK) { htmlChunks.push(' '); stack.push(null); return; }
       if (type === NodeType.HARD_BREAK) { htmlChunks.push('<br>'); stack.push(null); return; }
@@ -592,13 +615,14 @@ function renderHTMLPreview(markdown) {
       const tag = stack.pop();
       if (!tag) return;
       if (tag === 'code_block') { htmlChunks.push('</code></pre>'); return; }
+      if (tag === 'html_raw') return;
       if (tag === 'div') return; // document wrapper
       closeTag(tag);
     },
     onText(text) {
       const top = stack[stack.length - 1];
       if (top === 'code_block') { htmlChunks.push(escHTML(text)); return; }
-      // Don't output raw text if this is inside an HTML block
+      if (top === 'html_raw')   { htmlChunks.push(sanitizeHTML(text)); return; }
       htmlChunks.push(escHTML(text));
     },
     onModify(type, node) {
